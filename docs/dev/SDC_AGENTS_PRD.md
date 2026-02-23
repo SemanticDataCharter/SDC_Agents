@@ -242,13 +242,18 @@ Fine-grained XSD constraints (min_length, max_length, enumerations, patterns) ar
 SDCStudio already serves an OpenAPI specification at `/api/docs/` via `drf-yasg`. The Catalog Agent leverages ADK's `OpenAPIToolset` to auto-generate tools from this spec:
 
 ```python
-from google.adk.tools.openapi_tool import OpenAPIToolset
+from google.adk.tools.openapi_tool.openapi_spec_parser.openapi_toolset import OpenAPIToolset
+import httpx
 
-# Auto-generate tools from SDCStudio's OpenAPI spec
+# Fetch the OpenAPI spec (must be OpenAPI 3.x, not Swagger 2.0)
+spec_response = httpx.get(f"{config.sdcstudio.base_url}/api/docs/?format=openapi")
 catalog_api_tools = OpenAPIToolset(
-    spec_url=f"{config.sdcstudio.base_url}/api/docs/?format=openapi",
+    spec_str=spec_response.text,
+    spec_str_type="json",
 )
 ```
+
+> **Important**: `OpenAPIToolset` requires **OpenAPI 3.x** specs. SDCStudio currently uses `drf-yasg` which generates OpenAPI 2.0 (Swagger) by default. SDCStudio must either migrate to `drf-spectacular` (native OpenAPI 3.x) or configure `drf-yasg` to output 3.x. This is a Phase 1 prerequisite — see the [SDCStudio enhancement spec](https://github.com/Axius-SDC/SDCStudio/blob/main/docs/dev/agentic-registry/SDCStudio_API_Agents_PRD.md).
 
 The auto-generated tools cover list/detail/download endpoints. Custom `FunctionTool` wrappers add `.sdc-cache/` file persistence and immutable-schema caching on top:
 
@@ -275,7 +280,9 @@ This approach auto-generates the API bindings while custom wrappers handle cachi
 
 Both endpoints accept an optional `?package=true` query parameter. When set, VaaS returns a zip artifact package instead of a single XML response.
 
-The Validation Agent authenticates via ADK's `AuthCredential` pattern:
+The Validation Agent authenticates using the VaaS API token from configuration. Each tool function in the `ValidationToolset` attaches the token as an `Authorization: Token {key}` header on outbound HTTP requests. The token is injected at `ValidationToolset` construction time from the operator-controlled YAML config and never exposed to the LLM.
+
+For customers using `OpenAPIToolset` to consume VaaS endpoints (alternative to custom `FunctionTool` wrappers), ADK's `AuthCredential` pattern applies:
 
 ```python
 from google.adk.auth import AuthCredential, AuthCredentialTypes, ApiKeyCredentialConfig
@@ -857,7 +864,7 @@ async def generate_instance(
 
 ##### `generate_batch`
 
-Generate XML instances for multiple records.
+Generate XML instances for multiple records. Wrapped as `LongRunningFunctionTool` to avoid blocking the agent during large batch operations — the tool returns an operation ID, and the agent polls for completion.
 
 ```python
 async def generate_batch(
@@ -985,7 +992,7 @@ async def sign_instance(
 
 ##### `validate_batch`
 
-Validate (and optionally sign) multiple XML instances, requesting artifact packages for all.
+Validate (and optionally sign) multiple XML instances, requesting artifact packages for all. Wrapped as `LongRunningFunctionTool` for large batches.
 
 ```python
 async def validate_batch(
@@ -1056,7 +1063,7 @@ async def distribute_package(
 
 ##### `distribute_batch`
 
-Distribute all artifact packages in a directory.
+Distribute all artifact packages in a directory. Wrapped as `LongRunningFunctionTool` for large batches.
 
 ```python
 async def distribute_batch(
@@ -1366,7 +1373,7 @@ Instantiate all agents and compose them in an ADK runner:
 ```python
 from google.adk.agents import LlmAgent
 from google.adk.runners import Runner
-from google.adk.sessions import InMemorySessionService
+from google.adk.sessions import InMemorySessionService, DatabaseSessionService
 
 from sdc_agents.config import load_config
 from sdc_agents.toolsets.catalog import CatalogToolset
@@ -1382,6 +1389,7 @@ config = load_config("sdc-agents.yaml")
 catalog_agent = LlmAgent(
     name="catalog",
     model="gemini-2.0-flash",
+    description="Discovers published SDC4 schemas and downloads artifacts from SDCStudio.",
     instruction="Discover published SDC4 schemas and download artifacts.",
     tools=CatalogToolset(config=config).get_tools(),
 )
@@ -1389,6 +1397,7 @@ catalog_agent = LlmAgent(
 introspect_agent = LlmAgent(
     name="introspect",
     model="gemini-2.0-flash",
+    description="Examines customer datasources and extracts column structure (read-only).",
     instruction="Examine customer datasources and extract structure (read-only).",
     tools=IntrospectToolset(config=config).get_tools(),
 )
@@ -1396,6 +1405,7 @@ introspect_agent = LlmAgent(
 mapping_agent = LlmAgent(
     name="mapping",
     model="gemini-2.0-flash",
+    description="Suggests and manages column-to-component mappings between datasources and schemas.",
     instruction="Suggest and manage column-to-component mappings.",
     tools=MappingToolset(config=config).get_tools(),
 )
@@ -1403,6 +1413,7 @@ mapping_agent = LlmAgent(
 generator_agent = LlmAgent(
     name="generator",
     model="gemini-2.0-flash",
+    description="Produces SDC4 XML instance documents from mapped datasource records.",
     instruction="Produce SDC4 XML instances from mapped datasource records.",
     tools=GeneratorToolset(config=config).get_tools(),
 )
@@ -1410,6 +1421,7 @@ generator_agent = LlmAgent(
 validation_agent = LlmAgent(
     name="validation",
     model="gemini-2.0-flash",
+    description="Validates and signs XML instances via the VaaS API.",
     instruction="Validate and sign XML instances via the VaaS API.",
     tools=ValidationToolset(config=config).get_tools(),
 )
@@ -1417,11 +1429,13 @@ validation_agent = LlmAgent(
 distribution_agent = LlmAgent(
     name="distribution",
     model="gemini-2.0-flash",
+    description="Routes artifact packages to customer-local destinations (triplestore, graph DB, REST API, filesystem).",
     instruction="Route artifact packages to customer-local destinations.",
     tools=DistributionToolset(config=config).get_tools(),
 )
 
 # Compose as sub-agents of a root orchestrator (optional)
+# Note: description on each sub-agent is required for transfer_to_agent routing
 root_agent = LlmAgent(
     name="sdc_pipeline",
     model="gemini-2.0-flash",
@@ -1433,10 +1447,12 @@ root_agent = LlmAgent(
 )
 
 # Run with ADK runner
+# Development: InMemorySessionService (no persistence, state lost on restart)
+# Production:  DatabaseSessionService (SQL-backed, crash recovery, resume from record N)
 runner = Runner(
     agent=root_agent,
     app_name="sdc-agents",
-    session_service=InMemorySessionService(),
+    session_service=InMemorySessionService(),  # Use DatabaseSessionService for production
 )
 ```
 
@@ -1516,6 +1532,23 @@ sdc-agents serve --mcp introspect
 ```
 
 **MCP is documented but not the primary development path.** The primary architecture is ADK-native — `LlmAgent` + `BaseToolset` + `FunctionTool`. MCP export is a compatibility layer for framework-agnostic integration.
+
+> **Note**: MCP establishes stateful persistent connections, which can challenge distributed/scaled deployments. Customers running multiple concurrent MCP server instances should implement connection management accordingly.
+
+---
+
+## Observability (Phase 4)
+
+The audit log (`.sdc-cache/audit.jsonl`) captures every tool invocation for compliance. For production monitoring — latency dashboards, error rate tracking, LLM token usage, tool call distributions — SDC Agents integrates with ADK's observability ecosystem:
+
+| Backend | Use Case | ADK Integration |
+|---|---|---|
+| [Google Cloud Trace](https://google.github.io/adk-docs/integrations/google-cloud-trace/) | GCP-native production monitoring | Built-in ADK support |
+| OpenTelemetry export | Self-hosted monitoring (Grafana, Jaeger) | Via ADK's OTEL support |
+| [Phoenix](https://google.github.io/adk-docs/integrations/phoenix/) | Self-hosted LLM observability | ADK integration |
+| [MLflow](https://google.github.io/adk-docs/integrations/mlflow/) | Experiment tracking, trace ingestion | ADK integration |
+
+Observability is complementary to the audit log — the audit log is the compliance record (what happened), while observability provides operational metrics (how well it's working). Both are configured independently.
 
 ---
 
@@ -1673,6 +1706,7 @@ This means SDC_Agents Phases 1–4 are developed to completion before SDCStudio 
 - GitHub Actions CI/CD (lint, test, security scan, publish)
 - Example configurations for common use cases (healthcare, IoT, financial)
 - Contribution guidelines and issue templates
+- Observability integration — Google Cloud Trace for GCP, OpenTelemetry export for self-hosted (see [Observability](#observability-phase-4))
 - Audit log viewer CLI (`sdc-agents audit show --agent distribution --last 24h`)
 
 **This is when SDCStudio enhancements are built and validated.** By Phase 4, every API contract has been battle-tested by the agent code. SDCStudio implements its Phases 1–3 (Catalog enhancements, VaaS packages, retention) to match the verified consumer contracts. Integration tests confirm both sides agree.
@@ -1695,6 +1729,7 @@ Phase 5 adds two agents:
 - Only **new Clusters and the DM** are created; all component-level artifacts already exist
 - Assembly API authentication via API key → Modeler user → default project (same pattern as VaaS)
 - Intelligence on both sides: SDC_Agents handles analysis and discovery; SDCStudio handles assembly, validation, publication, and artifact generation
+- Component discovery may leverage [Vertex AI Search](https://google.github.io/adk-docs/integrations/vertex-ai-search/) for semantic matching (e.g., agent queries "blood pressure measurement" and Vertex AI Search finds the matching `ct_id` from the catalog) — evaluated during Phase 5 implementation
 
 **Development sequence**: Same consumer-first pattern. Build and test both agents with mocked Assembly API responses. SDCStudio implements `POST /api/v1/dmgen/assemble/` afterward to match the verified contract.
 
@@ -1766,6 +1801,8 @@ SDC Agents leverages existing ADK ecosystem integrations rather than building cu
 | [OpenAPIToolset](https://google.github.io/adk-docs/tools/openapi-tools/) | Catalog Agent | Auto-generated API bindings from SDCStudio's drf-yasg OpenAPI spec |
 | [Chroma](https://google.github.io/adk-docs/integrations/chroma/) | Knowledge Agent *(Phase 5)* | Local vector store for customer knowledge index |
 | [Vertex AI RAG Engine](https://google.github.io/adk-docs/integrations/vertex-ai-rag-engine/) | Knowledge Agent *(Phase 5)* | Managed retrieval for GCP-native deployments |
+| [Vertex AI Search](https://google.github.io/adk-docs/integrations/vertex-ai-search/) | Component Assembly Agent *(Phase 5)* | Semantic component discovery from catalog |
+| [Google Cloud Trace](https://google.github.io/adk-docs/integrations/google-cloud-trace/) | All agents *(Phase 4)* | Production observability — latency, error rates, token usage |
 
 ---
 

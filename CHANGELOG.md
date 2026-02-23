@@ -63,6 +63,16 @@ aligned with SDC Generation 4.
 - `mongodb` and `bigquery` datasource type examples in configuration
 - Knowledge Agent vector store backend configuration (chroma, vertex-ai-rag, qdrant, pinecone)
 - ADK Ecosystem Integrations Used reference table in PRD
+- **ADK API verification and corrections**:
+  - `OpenAPIToolset` import path corrected to `google.adk.tools.openapi_tool.openapi_spec_parser.openapi_toolset`
+  - `OpenAPIToolset` requires `spec_str`/`spec_dict` (no `spec_url` parameter); requires **OpenAPI 3.x** (not Swagger 2.0)
+  - `AuthCredential` pattern clarified: custom `FunctionTool` wrappers manage credentials internally; `AuthCredential` is for `OpenAPIToolset` integration
+  - `LlmAgent` `description` parameter added to all agents (required for `transfer_to_agent` routing)
+  - `LongRunningFunctionTool` for batch operations (`generate_batch`, `validate_batch`, `distribute_batch`)
+  - `DatabaseSessionService` noted as production alternative to `InMemorySessionService`
+- **Observability** (Phase 4) — Google Cloud Trace, OpenTelemetry export, Phoenix, MLflow
+- Vertex AI Search referenced for Phase 5 semantic component discovery
+- MCP stateful connection scalability constraint documented
 
 ### Planned — Phase 1: Core Agents
 - Project scaffolding (Python package, per-agent ADK `BaseToolset` + `LlmAgent` definitions)
