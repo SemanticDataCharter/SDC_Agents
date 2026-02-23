@@ -16,6 +16,10 @@ datasources:
   test_csv:
     type: "csv"
     path: "tests/fixtures/sample_data/lab_results.csv"
+  test_json:
+    type: "json"
+    path: "tests/fixtures/sample_data/records.json"
+    jsonpath: "$.results[*]"
 
 output:
   directory: "./test-output"

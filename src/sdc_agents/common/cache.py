@@ -42,6 +42,14 @@ class CacheManager:
         """Path where a mapping config would be cached."""
         return self._root / "mappings" / f"{name}.json"
 
+    def skeleton_path(self, ct_id: str) -> Path:
+        """Path where a skeleton XML instance would be cached."""
+        return self._root / "schemas" / f"{ct_id}_skeleton.xml"
+
+    def field_mapping_path(self, ct_id: str) -> Path:
+        """Path where a field mapping JSON would be cached."""
+        return self._root / "schemas" / f"{ct_id}_field_mapping.json"
+
     def is_cached(self, path: Path) -> bool:
         """Check whether a cached file exists and is non-empty."""
         return path.is_file() and path.stat().st_size > 0

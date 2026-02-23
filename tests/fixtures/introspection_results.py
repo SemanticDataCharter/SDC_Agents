@@ -71,3 +71,81 @@ def make_csv_introspection() -> dict:
         ],
         "row_count": 50,
     }
+
+
+def make_json_introspection() -> dict:
+    """Sample JSON introspection result."""
+    return {
+        "datasource": "records_json",
+        "type": "json",
+        "columns": [
+            {"name": "test_id", "inferred_type": "integer", "sample_values": [1, 2, 3]},
+            {
+                "name": "patient_email",
+                "inferred_type": "email",
+                "sample_values": ["alice@example.com", "bob@example.com"],
+            },
+            {
+                "name": "test_name",
+                "inferred_type": "string",
+                "sample_values": ["CBC", "BMP", "Lipid Panel"],
+            },
+            {
+                "name": "result",
+                "inferred_type": "decimal",
+                "sample_values": [98.6, 120.5, 85.0],
+            },
+            {
+                "name": "is_critical",
+                "inferred_type": "boolean",
+                "sample_values": [True, False, True],
+            },
+            {
+                "name": "collected_date",
+                "inferred_type": "date",
+                "sample_values": ["2026-01-15", "2026-01-16"],
+            },
+        ],
+        "row_count": 5,
+    }
+
+
+def make_mongodb_introspection() -> dict:
+    """Sample MongoDB introspection result."""
+    return {
+        "datasource": "clinical_db",
+        "collection": "lab_results",
+        "fields": [
+            {
+                "name": "_id",
+                "bson_type": "objectId",
+                "nullable": False,
+                "sample_values": ["507f1f77bcf86cd799439011"],
+            },
+            {
+                "name": "test_name",
+                "bson_type": "string",
+                "nullable": False,
+                "sample_values": ["CBC", "BMP"],
+            },
+            {
+                "name": "result_value",
+                "bson_type": "double",
+                "nullable": True,
+                "sample_values": [98.6, 120.5],
+            },
+            {
+                "name": "is_abnormal",
+                "bson_type": "bool",
+                "nullable": False,
+                "sample_values": [True, False],
+            },
+            {
+                "name": "collected_at",
+                "bson_type": "date",
+                "nullable": False,
+                "sample_values": ["2026-01-15T08:30:00Z"],
+            },
+        ],
+        "document_count": 100,
+    }

@@ -193,9 +193,208 @@ async def test_csv_wrong_datasource_type(introspect_toolset: IntrospectToolset):
         await introspect_toolset.introspect_csv("test_db")
 
 
-async def test_get_tools_returns_two(introspect_toolset: IntrospectToolset):
-    """get_tools returns exactly 2 tools."""
+async def test_get_tools_returns_four(introspect_toolset: IntrospectToolset):
+    """get_tools returns exactly 4 tools."""
     tools = await introspect_toolset.get_tools()
-    assert len(tools) == 2
+    assert len(tools) == 4
     names = {t.name for t in tools}
-    assert names == {"introspect_sql", "introspect_csv"}
+    assert names == {"introspect_sql", "introspect_csv", "introspect_json", "introspect_mongodb"}
+
+
+# --- JSON introspection tests ---
+
+
+@pytest.fixture
+def json_path() -> Path:
+    return Path(__file__).parent.parent / "fixtures" / "sample_data" / "records.json"
+
+
+@pytest.fixture
+def json_config(tmp_path: Path, json_path: Path, csv_path: Path) -> SDCAgentsConfig:
+    return SDCAgentsConfig(
+        cache={"root": str(tmp_path / ".sdc-cache")},
+        audit={"path": str(tmp_path / "audit.jsonl"), "log_level": "verbose"},
+        datasources={
+            "test_db": {
+                "type": "sql",
+                "connection_string": "sqlite+aiosqlite://",
+            },
+            "test_csv": {
+                "type": "csv",
+                "path": str(csv_path),
+            },
+            "test_json": {
+                "type": "json",
+                "path": str(json_path),
+                "jsonpath": "$.results[*]",
+            },
+            "test_json_no_jp": {
+                "type": "json",
+                "path": str(json_path),
+            },
+        },
+    )
+
+
+@pytest.fixture
+def json_toolset(json_config: SDCAgentsConfig) -> IntrospectToolset:
+    return IntrospectToolset(config=json_config)
+
+
+async def test_json_introspect_with_jsonpath(json_toolset: IntrospectToolset):
+    """JSON introspection with JSONPath extracts records correctly."""
+    result = await json_toolset.introspect_json("test_json")
+    assert result["type"] == "json"
+    assert result["row_count"] == 5
+
+    col_map = {c["name"]: c for c in result["columns"]}
+    assert "test_id" in col_map
+    assert "test_name" in col_map
+    assert "result" in col_map
+    assert "is_critical" in col_map
+
+
+async def test_json_introspect_type_inference(json_toolset: IntrospectToolset):
+    """JSON introspection infers types from values."""
+    result = await json_toolset.introspect_json("test_json")
+    col_map = {c["name"]: c for c in result["columns"]}
+    assert col_map["test_id"]["inferred_type"] == "integer"
+    assert col_map["patient_email"]["inferred_type"] == "email"
+    assert col_map["collected_date"]["inferred_type"] == "date"
+    assert col_map["collected_time"]["inferred_type"] == "time"
+    assert col_map["request_uuid"]["inferred_type"] == "UUID"
+
+
+async def test_json_introspect_without_jsonpath(json_toolset: IntrospectToolset):
+    """JSON introspection without JSONPath reads root object."""
+    result = await json_toolset.introspect_json("test_json_no_jp")
+    # Without JSONPath, root is a dict with 'results' key, so 1 record (the dict)
+    # but since the root is a dict, it has one "row" — the root object itself
+    assert result["type"] == "json"
+    assert result["row_count"] == 1
+
+
+async def test_json_wrong_datasource_type(json_toolset: IntrospectToolset):
+    """Using a CSV datasource for JSON raises ValueError."""
+    with pytest.raises(ValueError, match="not 'json'"):
+        await json_toolset.introspect_json("test_csv")
+
+
+async def test_json_unknown_datasource(json_toolset: IntrospectToolset):
+    """Unknown datasource name raises KeyError."""
+    with pytest.raises(KeyError, match="Unknown datasource"):
+        await json_toolset.introspect_json("nonexistent")
+
+
+async def test_json_file_not_found(tmp_path: Path):
+    """Missing JSON file raises FileNotFoundError."""
+    config = SDCAgentsConfig(
+        cache={"root": str(tmp_path / ".sdc-cache")},
+        audit={"path": str(tmp_path / "audit.jsonl")},
+        datasources={
+            "bad_json": {
+                "type": "json",
+                "path": "/nonexistent/file.json",
+            },
+        },
+    )
+    toolset = IntrospectToolset(config=config)
+    with pytest.raises(FileNotFoundError, match="JSON file not found"):
+        await toolset.introspect_json("bad_json")
+
+
+async def test_json_nested_objects(tmp_path: Path):
+    """JSON with nested objects reports 'object' type."""
+    import json as json_mod
+
+    json_file = tmp_path / "nested.json"
+    json_file.write_text(json_mod.dumps([
+        {"name": "Alice", "address": {"city": "NYC", "zip": "10001"}},
+        {"name": "Bob", "address": {"city": "LA", "zip": "90001"}},
+    ]))
+
+    config = SDCAgentsConfig(
+        cache={"root": str(tmp_path / ".sdc-cache")},
+        audit={"path": str(tmp_path / "audit.jsonl")},
+        datasources={
+            "nested": {"type": "json", "path": str(json_file)},
+        },
+    )
+    toolset = IntrospectToolset(config=config)
+    result = await toolset.introspect_json("nested")
+    col_map = {c["name"]: c for c in result["columns"]}
+    assert col_map["address"]["inferred_type"] == "object"
+
+
+async def test_json_arrays(tmp_path: Path):
+    """JSON with array values reports 'array' type."""
+    import json as json_mod
+
+    json_file = tmp_path / "arrays.json"
+    json_file.write_text(json_mod.dumps([
+        {"name": "Alice", "scores": [90, 85, 92]},
+        {"name": "Bob", "scores": [78, 88]},
+    ]))
+
+    config = SDCAgentsConfig(
+        cache={"root": str(tmp_path / ".sdc-cache")},
+        audit={"path": str(tmp_path / "audit.jsonl")},
+        datasources={
+            "arrays": {"type": "json", "path": str(json_file)},
+        },
+    )
+    toolset = IntrospectToolset(config=config)
+    result = await toolset.introspect_json("arrays")
+    col_map = {c["name"]: c for c in result["columns"]}
+    assert col_map["scores"]["inferred_type"] == "array"
+
+
+# --- MongoDB introspection tests ---
+
+
+async def test_mongodb_wrong_datasource_type(introspect_toolset: IntrospectToolset):
+    """Using a SQL datasource for MongoDB raises ValueError."""
+    with pytest.raises(ValueError, match="not 'mongodb'"):
+        await introspect_toolset.introspect_mongodb("test_db")
+
+
+async def test_mongodb_unknown_datasource(introspect_toolset: IntrospectToolset):
+    """Unknown datasource name raises KeyError."""
+    with pytest.raises(KeyError, match="Unknown datasource"):
+        await introspect_toolset.introspect_mongodb("nonexistent")
+
+
+async def test_mongodb_no_collection(tmp_path: Path):
+    """Missing collection raises ValueError."""
+    config = SDCAgentsConfig(
+        cache={"root": str(tmp_path / ".sdc-cache")},
+        audit={"path": str(tmp_path / "audit.jsonl")},
+        datasources={
+            "mongo_no_coll": {
+                "type": "mongodb",
+                "connection_string": "mongodb://localhost:27017",
+                "database": "testdb",
+            },
+        },
+    )
+    toolset = IntrospectToolset(config=config)
+    with pytest.raises(ValueError, match="No collection specified"):
+        await toolset.introspect_mongodb("mongo_no_coll")
+
+
+async def test_mongodb_no_database(tmp_path: Path):
+    """Missing database raises ValueError."""
+    config = SDCAgentsConfig(
+        cache={"root": str(tmp_path / ".sdc-cache")},
+        audit={"path": str(tmp_path / "audit.jsonl")},
+        datasources={
+            "mongo_no_db": {
+                "type": "mongodb",
+                "connection_string": "mongodb://localhost:27017",
+                "collection": "test_coll",
+            },
+        },
+    )
+    toolset = IntrospectToolset(config=config)
+    with pytest.raises(ValueError, match="No database specified"):
+        await toolset.introspect_mongodb("mongo_no_db")

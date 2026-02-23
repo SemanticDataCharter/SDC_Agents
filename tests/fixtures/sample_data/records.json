@@ -1,0 +1,54 @@
+{
+  "results": [
+    {
+      "test_id": 1,
+      "patient_email": "alice@example.com",
+      "test_name": "CBC",
+      "result": 98.6,
+      "is_critical": true,
+      "collected_date": "2026-01-15",
+      "collected_time": "08:30:00",
+      "request_uuid": "550e8400-e29b-41d4-a716-446655440000"
+    },
+    {
+      "test_id": 2,
+      "patient_email": "bob@example.com",
+      "test_name": "BMP",
+      "result": 120.5,
+      "is_critical": false,
+      "collected_date": "2026-01-16",
+      "collected_time": "09:15:00",
+      "request_uuid": "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
+    },
+    {
+      "test_id": 3,
+      "patient_email": "carol@example.com",
+      "test_name": "Lipid Panel",
+      "result": 85.0,
+      "is_critical": true,
+      "collected_date": "2026-01-17",
+      "collected_time": "10:00:00",
+      "request_uuid": "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+    },
+    {
+      "test_id": 4,
+      "patient_email": "dave@example.com",
+      "test_name": "CBC",
+      "result": 92.1,
+      "is_critical": false,
+      "collected_date": "2026-01-18",
+      "collected_time": "11:45:00",
+      "request_uuid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+    },
+    {
+      "test_id": 5,
+      "patient_email": "eve@example.com",
+      "test_name": "HbA1c",
+      "result": 6.5,
+      "is_critical": false,
+      "collected_date": "2026-01-19",
+      "collected_time": "14:20:00",
+      "request_uuid": "12345678-1234-1234-1234-123456789abc"
+    }
+  ]
+}
