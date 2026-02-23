@@ -33,8 +33,22 @@ aligned with SDC Generation 4.
 - ADK `AuthCredential` pattern for Validation Agent VaaS token
 - MCP Export section documenting secondary MCP server interface
 - ADK Integration Page deliverable (Phase 4) — contribute to `google/adk-docs` integrations directory
-- Phase 5 placeholder: Component Assembly Agent (future — create-and-consume)
-- "Future: Component Assembly" scope boundary for post-Phase 4 schema creation capability
+- Component Assembly Design Document (`docs/dev/COMPONENT_ASSEMBLY_DESIGN.md`)
+- Design decisions D3–D9 for Phase 5 component assembly architecture:
+  - D3: Reference components by `ct_id`, never copy — reuse across models and domains
+  - D4: Fully autonomous pipeline — no human-in-the-loop, published output
+  - D5: Assembly API authentication via API key → Modeler user → default project
+  - D6: SDC_Agents proposes Cluster labels from data source analysis
+  - D7: Contextual components discovered from SDCStudio's Default project library
+  - D8: Arbitrarily complex nested Cluster hierarchies
+  - D9: Intelligence on both sides — agents analyze, SDCStudio assembles
+- **Knowledge Agent** (Phase 5) — ingests customer-side contextual resources (data dictionaries, PDFs, ontologies) into `.sdc-cache/knowledge/`
+- **Component Assembly Agent** (Phase 5) — discovers catalog components, proposes Cluster hierarchy, calls SDCStudio Assembly API, produces fully published data models
+- `knowledge:` configuration section for customer context resources (CSV, PDF, JSON, TTL)
+- `default_library_project` setting for contextual component discovery
+- Assembly API key in credential isolation model
+- Open questions O7–O10 (knowledge scope, assembly failures, matching intelligence, multi-source assembly)
+- Success criterion 10: autonomous assembly pipeline end-to-end
 
 ### Planned — Phase 1: Core Agents
 - Project scaffolding (Python package, per-agent ADK `BaseToolset` + `LlmAgent` definitions)
@@ -69,8 +83,13 @@ aligned with SDC Generation 4.
 - GitHub Actions CI/CD
 - Comprehensive documentation and example configurations
 
-### Planned — Phase 5: Component Assembly (Future)
-- Component Assembly Agent — discover and assemble reusable catalog components into bespoke data models
+### Planned — Phase 5: Component Assembly and Knowledge (Future)
+- **Knowledge Agent**: `KnowledgeToolset` — ingest data dictionaries, PDFs, glossaries, ontologies into local knowledge index
+- **Component Assembly Agent**: `AssemblyToolset` — analyze data sources, discover matching catalog components, propose Cluster hierarchies, call SDCStudio Assembly API
+- Fully autonomous: published, generated data model output — no human-in-the-loop (D4)
+- Components referenced by `ct_id`, never copied (D3)
+- Contextual components (Audit, Attestation, Party, etc.) from Default project library (D7)
+- SDCStudio dependency: `POST /api/v1/dmgen/assemble/` endpoint
 
 ---
 
