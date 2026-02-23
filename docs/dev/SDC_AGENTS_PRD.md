@@ -1722,9 +1722,9 @@ This means SDC_Agents Phases 1–4 are developed to completion before SDCStudio 
 - PyPI packaging (`pip install sdc-agents`)
 - MCP export adapters (per-agent MCP server mode via `adk_to_mcp_tool_type`)
 - ADK Integration Page contribution (`docs/integrations/sdc-agents.md` to `google/adk-docs` repo — see [ADK Integration Page](#adk-integration-page-phase-4))
-- **ADK Ecosystem Contributions** — generalize Phase 3 connectors and contribute to `google/adk-docs` integrations directory (see [ADK Ecosystem Contributions](#adk-ecosystem-contributions-phase-4)):
+- **ADK Ecosystem Contribution** — generalize Phase 3 SPARQL connector and contribute to `google/adk-docs` integrations directory (see [ADK Ecosystem Contributions](#adk-ecosystem-contributions-phase-4)):
   - `adk-sparql-tools` — SPARQL 1.1 / Fuseki / GraphDB integration (fills a gap: no triplestore integrations exist in the current ADK ecosystem)
-  - `adk-neo4j-tools` — Neo4j / property graph integration (fills a gap: no property graph DB integrations exist)
+  - ~~`adk-neo4j-tools`~~ — superseded by [MCP Toolbox for Databases](https://google.github.io/adk-docs/integrations/mcp-toolbox-for-databases/#graph-databases) (Neo4j + Dgraph support)
 - Docker images (one per agent, for containerized deployment with network isolation)
 - GitHub Actions CI/CD (lint, test, security scan, publish)
 - Example configurations for common use cases (healthcare, IoT, financial)
@@ -1780,7 +1780,7 @@ Phase 4 includes contributing an integration page to the `google/adk-docs` repos
 
 ## ADK Ecosystem Contributions (Phase 4)
 
-Phase 3 builds triplestore and property graph connectors for the Distribution Agent. Phase 4 generalizes these into standalone ADK integrations and contributes them to the `google/adk-docs` integrations directory. **No triplestore or property graph database integrations currently exist** in the ADK ecosystem (52 integrations as of February 2026) — these fill a real gap.
+Phase 3 builds triplestore and property graph connectors for the Distribution Agent. Phase 4 generalizes the triplestore connector into a standalone ADK integration and contributes it to the `google/adk-docs` integrations directory. **No triplestore integration currently exists** in the ADK ecosystem — `adk-sparql-tools` fills this gap. Property graph support (Neo4j, Dgraph) is already available via [MCP Toolbox for Databases](https://google.github.io/adk-docs/integrations/mcp-toolbox-for-databases/#graph-databases), so `adk-neo4j-tools` is no longer needed as an ecosystem contribution.
 
 ### `adk-sparql-tools` — SPARQL / Triplestore Integration
 
@@ -1791,23 +1791,18 @@ Phase 3 builds triplestore and property graph connectors for the Distribution Ag
 | **Auth** | Basic auth, Bearer token, or no auth (configurable) |
 | **Value to ADK community** | Enables any ADK agent to work with RDF/linked data — relevant to knowledge graphs, ontology management, semantic search, and any domain using W3C standards |
 
-### `adk-neo4j-tools` — Neo4j / Property Graph Integration
+### ~~`adk-neo4j-tools` — Neo4j / Property Graph Integration~~ (Superseded)
 
-| Field | Value |
-|---|---|
-| **Supported backends** | Neo4j, Memgraph, Amazon Neptune (OpenCypher) |
-| **Tools** | `cypher_query` (read), `cypher_write` (create/update), `get_schema` (labels, relationship types, property keys), `get_node`, `find_paths` |
-| **Auth** | Bolt protocol auth (username/password), or IAM (Neptune) |
-| **Value to ADK community** | Enables any ADK agent to work with property graphs — relevant to fraud detection, recommendation engines, network analysis, and social graph applications |
+Neo4j and Dgraph property graph support is now available via [MCP Toolbox for Databases](https://google.github.io/adk-docs/integrations/mcp-toolbox-for-databases/#graph-databases) with Cypher query and schema inspection tools. This contribution is no longer needed. SDC Agents' Distribution Agent uses its own httpx-based Neo4j HTTP connector for GQL statement delivery, which is sufficient for the artifact distribution use case.
 
 ### Contribution Strategy
 
-1. **Phase 3**: Build connectors for SDC Distribution Agent use case
-2. **Phase 4**: Extract generic modules, write integration docs and tests, submit PRs to `google/adk-docs`
+1. **Phase 3**: Build connectors for SDC Distribution Agent use case (complete)
+2. **Phase 4**: Extract SPARQL module as generic integration, write docs and tests, submit PRs to `google/adk-docs`
 3. **Same CLA** — the Google CLA signing for the SDC Agents integration page covers these contributions
-4. **Three PRs total**: SDC Agents integration page + SPARQL integration + Neo4j integration
+4. **Two PRs total**: SDC Agents integration page + SPARQL integration
 
-This establishes SDC as a credible ADK ecosystem contributor — the project that brought graph and semantic web infrastructure into the ADK integrations directory.
+This establishes SDC as a credible ADK ecosystem contributor — the project that brought triplestore/semantic web infrastructure into the ADK integrations directory.
 
 ---
 
@@ -1817,7 +1812,7 @@ SDC Agents leverages existing ADK ecosystem integrations rather than building cu
 
 | ADK Integration | Used By | Purpose |
 |---|---|---|
-| [MCP Toolbox for Databases](https://google.github.io/adk-docs/integrations/mcp-toolbox-for-databases/) | Introspect Agent | SQL connector layer — 30+ databases (PostgreSQL, MySQL, SQLite, MSSQL, Oracle, Cloud SQL, AlloyDB, Spanner, BigQuery) |
+| [MCP Toolbox for Databases](https://google.github.io/adk-docs/integrations/mcp-toolbox-for-databases/) | Introspect Agent | SQL connector layer — 30+ databases (PostgreSQL, MySQL, SQLite, MSSQL, Oracle, Cloud SQL, AlloyDB, Spanner, BigQuery); also provides [graph database support](https://google.github.io/adk-docs/integrations/mcp-toolbox-for-databases/#graph-databases) (Neo4j, Dgraph) |
 | [BigQuery Tools](https://google.github.io/adk-docs/integrations/bigquery/) | Introspect Agent | GCP-native BigQuery introspection with IAM auth |
 | [Spanner Tools](https://google.github.io/adk-docs/integrations/spanner/) | Introspect Agent | GCP-native Spanner introspection with IAM auth |
 | [MongoDB](https://google.github.io/adk-docs/integrations/mongodb/) | Introspect Agent | Document database schema analysis and sampling |
