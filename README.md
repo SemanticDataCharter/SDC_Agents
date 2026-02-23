@@ -167,9 +167,9 @@ catalog_agent = LlmAgent(
 )
 ```
 
-### Usage (MCP — Secondary, Future)
+### Usage (MCP — Secondary)
 
-Each agent can also be served as an MCP server for non-ADK clients:
+Each agent can be served as an MCP stdio server for non-ADK clients:
 
 ```bash
 # Start the Catalog Agent as an MCP server
@@ -177,6 +177,27 @@ sdc-agents serve --mcp catalog
 
 # Start the Introspect Agent as an MCP server
 sdc-agents serve --mcp introspect
+
+# Any of the 6 agents: catalog, distribution, generator, introspect, mapping, validation
+sdc-agents serve --mcp validation
+```
+
+### CLI Commands
+
+```bash
+# Show configuration summary and agent inventory
+sdc-agents info
+sdc-agents info --config path/to/sdc-agents.yaml
+
+# Validate a config file (useful in CI)
+sdc-agents validate-config
+sdc-agents validate-config --config path/to/sdc-agents.yaml
+
+# Inspect the audit log
+sdc-agents audit show                        # last 50 records
+sdc-agents audit show --agent catalog        # filter by agent
+sdc-agents audit show --last 24h --limit 20  # recent records
+sdc-agents audit show --audit-path ./logs/audit.jsonl  # custom path
 ```
 
 ### Testing
@@ -211,7 +232,7 @@ pytest tests/security/
 | **Phase 1** | Catalog, Introspect, and Mapping agents with shared infra | **Complete** |
 | **Phase 2** | Generator and Validation agents, Introspect extensions | **Complete** |
 | **Phase 3** | Distribution Agent with multi-destination delivery | **Complete** |
-| **Phase 4** | Production hardening, PyPI, MCP export adapters, ADK Integration Page | Planned |
+| **Phase 4** | Production hardening, PyPI, MCP export adapters, ADK Integration Page | **In Progress** |
 | **Phase 5** | Knowledge Agent + Component Assembly Agent | Future |
 
 ### What's Implemented (Phases 1–3)
