@@ -1,7 +1,7 @@
 # SDC Agents: Purpose-Scoped ADK Agents for SDC4 Data Operations
 
 **Date**: 2026-02-23
-**Status**: Draft
+**Status**: Active (Phase 1 complete, Phase 2 planned)
 **Author**: Timothy W. Cook / Claude Code
 **Repository**: `SemanticDataCharter/SDC_Agents` (Apache 2.0 License)
 **Related**: SDCStudio `docs/dev/agentic-registry/SDCStudio_API_Agents_PRD.md` (SDCStudio-side enhancement spec)
@@ -1641,20 +1641,28 @@ This means SDC_Agents Phases 1–4 are developed to completion before SDCStudio 
 
 ## Implementation Phases
 
-### Phase 1: Core Agents
+### Phase 1: Core Agents — COMPLETE
 
 **Goal**: Three working agents covering discovery, introspection, and mapping.
 
-**Deliverables**:
-- Project scaffolding (Python package, per-agent ADK `BaseToolset` + `LlmAgent` definitions)
-- Shared `AuditLogger` library (append-only JSON lines to `.sdc-cache/audit.jsonl`)
-- **Catalog Agent**: `CatalogToolset` with `catalog_list_schemas`, `catalog_get_schema`, `catalog_download_skeleton`, `catalog_download_schema_rdf`, `catalog_download_ontologies`
-- **Introspect Agent**: `IntrospectToolset` with `introspect_sql` (via MCP Toolbox for Databases — 30+ data sources), `introspect_csv`
-- **Mapping Agent**: `MappingToolset` with `mapping_suggest`, `mapping_confirm`, `mapping_list`
-- YAML configuration loader with env var substitution
-- Mock SDCStudio API responses for all Catalog endpoints (fixtures for testing without a live SDCStudio instance)
-- Unit tests for all tools
-- Security tests: verify agents cannot access out-of-scope resources
+**Status**: Complete (2026-02-23). 68 tests passing, 92% coverage.
+
+**Delivered**:
+- `pyproject.toml` — hatchling build with google-adk>=1.25, pydantic>=2, pyyaml>=6, httpx>=0.27, sqlalchemy>=2
+- `sdc_agents.common.config` — Pydantic models (`SDCAgentsConfig`, `SDCStudioConfig`, `CacheConfig`, `AuditConfig`, `DatasourceConfig`, `OutputConfig`) with YAML loader and `${VAR}` regex substitution (fail-closed: `KeyError` on missing env var)
+- `sdc_agents.common.audit` — `AuditLogger` with append-only JSONL, `_sanitize()` redacts keys containing connection/token/key/password/secret, `_summarize()` reduces outputs to counts at standard log level
+- `sdc_agents.common.cache` — `CacheManager` with path helpers for schemas/ontologies/introspections/mappings, `ensure_dirs()`, `is_cached()`
+- **Catalog Agent**: `CatalogToolset(BaseToolset)` with 5 tools (`catalog_list_schemas`, `catalog_get_schema`, `catalog_download_schema_rdf`, `catalog_download_skeleton`, `catalog_download_ontologies`), httpx async client, cache-first for immutable schemas
+- **Introspect Agent**: `IntrospectToolset(BaseToolset)` with 2 tools (`introspect_sql`, `introspect_csv`), SELECT-only regex enforcement, CSV type inference for 10 types (boolean > integer > decimal > date > datetime > time > email > URL > UUID > string)
+- **Mapping Agent**: `MappingToolset(BaseToolset)` with 3 tools (`mapping_suggest`, `mapping_confirm`, `mapping_list`), `TYPE_COMPATIBILITY` matrix + `SequenceMatcher` name similarity, JSON persist/list in `.sdc-cache/mappings/`
+- Agent factories: `create_catalog_agent()`, `create_introspect_agent()`, `create_mapping_agent()` — each returns `LlmAgent(tools=[Toolset(config)])`
+- Mock fixtures: `httpx.MockTransport` for Catalog API, `aiosqlite` for SQL introspection — zero live SDCStudio dependency
+- Security tests: tool scope isolation (each toolset exposes only its own tools, no cross-scope leakage), SQL write rejection (9 patterns: DROP/INSERT/UPDATE/DELETE/ALTER/CREATE/TRUNCATE/REPLACE/MERGE), datasource name enforcement
+
+**Implementation notes**:
+- Phase 1 uses SQLAlchemy directly for SQL introspection (testable with aiosqlite). MCP Toolbox for Databases integration deferred to Phase 2 — same tool function signatures, transparent swap.
+- Bound methods used as tools (not standalone functions). `FunctionTool` wraps bound methods; `inspect.signature` of a bound method excludes `self`, so ADK schema derivation works correctly.
+- Toolsets passed directly to `LlmAgent.tools` list (not `get_tools()` results). ADK calls `get_tools()` internally.
 
 **SDCStudio dependency**: Phase 1 defines the contract that SDCStudio must fulfill — skeleton endpoint, individual artifact serving (ttl/shacl/gql), ontology endpoint, and enhanced catalog detail serializer. SDCStudio implements these **after** the agent contract is stable. See the [SDCStudio enhancement spec](https://github.com/Axius-SDC/SDCStudio/blob/main/docs/dev/agentic-registry/SDCStudio_API_Agents_PRD.md).
 
@@ -1663,15 +1671,38 @@ This means SDC_Agents Phases 1–4 are developed to completion before SDCStudio 
 **Goal**: End-to-end flow from datasource to validated XML.
 
 **Deliverables**:
-- **Generator Agent**: `GeneratorToolset` with `generate_instance`, `generate_batch`, `generate_preview`
-- **Validation Agent**: `ValidationToolset` with `validate_instance`, `sign_instance`, `validate_batch`
-- `introspect_json` and `introspect_mongodb` tools added to `IntrospectToolset`
-- MongoDB introspection via ADK MongoDB integration; BigQuery/Spanner introspection via dedicated ADK integrations
-- `OpenAPIToolset` integration for Catalog API (auto-generated bindings from SDCStudio's drf-yasg spec)
-- Mock VaaS API responses for validation and signing (fixtures including artifact packages)
-- Improved type inference using string format inference patterns
-- Confidence scoring for mapping suggestions
-- CLI wrapper for non-ADK usage
+
+**Generator Agent** (`sdc_agents/toolsets/generator.py`, `sdc_agents/agents/generator.py`):
+- `GeneratorToolset(BaseToolset)` with 3 tools:
+  - `generate_instance` — single record → XML using skeleton template + field mapping + placeholder substitution
+  - `generate_batch` — multi-record batch via `LongRunningFunctionTool`, returns operation ID for polling
+  - `generate_preview` — single record preview without disk write
+- Skeleton-based generation: load `{ct_id}_skeleton.xml` + `{ct_id}_field_mapping.json` from cache, copy skeleton per record, replace `__PLACEHOLDER__` tokens with mapped data values, prune unfilled optional elements, error on unfilled required elements
+- Datasource record fetching: reuse Phase 1 `IntrospectToolset` SQL/CSV reading patterns (read-only, config-only datasource names)
+- XML output to configured output directory
+
+**Validation Agent** (`sdc_agents/toolsets/validation.py`, `sdc_agents/agents/validation.py`):
+- `ValidationToolset(BaseToolset)` with 3 tools:
+  - `validate_instance` — POST to VaaS API, returns structural/semantic error counts, optional artifact package
+  - `sign_instance` — validate + sign via VaaS, returns signature metadata
+  - `validate_batch` — multi-file validation via `LongRunningFunctionTool`
+- httpx async client with `Authorization: Token {key}` header injection
+- File path confinement: only reads/writes within configured output directory
+- Mock VaaS API responses (fixtures including validation results and artifact package .zip)
+
+**Introspect Agent extensions**:
+- `introspect_json` tool — JSON file introspection with optional JSONPath extraction
+- `introspect_mongodb` tool — MongoDB collection schema analysis via ADK MongoDB integration
+- MCP Toolbox for Databases integration for `introspect_sql` (replacing Phase 1 direct SQLAlchemy)
+
+**Mapping Agent enhancements**:
+- Confidence scoring for mapping suggestions (combine type compatibility weight + name similarity + sample value overlap)
+- `mapping_export` tool — export mapping config to standalone JSON for external tooling
+
+**Infrastructure**:
+- `OpenAPIToolset` integration for Catalog API (requires SDCStudio OpenAPI 3.x spec — see prerequisites)
+- Test fixtures: mock VaaS API responses with `httpx.MockTransport`, sample skeleton XML + field mapping JSON, sample artifact package .zip
+- Security tests: Validation Agent confined to output directory, Generator Agent read-only datasource access, VaaS token redacted in audit log
 
 ### Phase 3: Artifact Package and Distribution
 
