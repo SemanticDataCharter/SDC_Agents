@@ -69,42 +69,69 @@ See [docs/dev/SDC_AGENTS_PRD.md](docs/dev/SDC_AGENTS_PRD.md) for the full API co
 
 ## Quick Start
 
-> **Note**: SDC Agents is in active development. The instructions below describe the target workflow.
-
 ### Prerequisites
 
 - Python 3.11+
-- Access to a published SDC4 schema on an SDCStudio instance
-- Google ADK (`pip install google-adk`)
+- Google ADK 1.25+ (`pip install google-adk`)
 
 ### Installation
 
 ```bash
-pip install sdc-agents
+pip install -e ".[dev]"
 ```
 
 ### Configuration
 
-Create `sdc-agents.yaml` in your project directory:
+Copy `sdc-agents.example.yaml` to `sdc-agents.yaml` and fill in values:
 
 ```yaml
 sdcstudio:
-  base_url: "https://sdcstudio.com"
-  api_key: "${SDC_API_KEY}"        # Validation Agent only
+  base_url: "https://sdcstudio.example.com"
+
+cache:
+  root: ".sdc-cache"
+  ttl_hours: 24
+
+audit:
+  path: ".sdc-cache/audit.jsonl"
+  log_level: "standard"    # "standard" summarizes outputs; "verbose" logs full payloads
 
 datasources:
   my_database:
     type: sql
-    connection: "${DB_URL}"
+    connection_string: "${DB_CONNECTION}"   # env var substitution
+  my_csv:
+    type: csv
+    path: "/data/exports/records.csv"
 
 output:
-  directory: "./sdc-output"
+  directory: "./output"
+  formats:
+    - "xml"
 ```
+
+Environment variables use `${VAR}` syntax. Missing variables cause an immediate `KeyError` (fail closed).
 
 ### Usage (ADK — Primary)
 
 ```python
-from sdc_agents.config import load_config
+from sdc_agents.common.config import load_config
+from sdc_agents.agents.catalog import create_catalog_agent
+from sdc_agents.agents.introspect import create_introspect_agent
+from sdc_agents.agents.mapping import create_mapping_agent
+
+config = load_config("sdc-agents.yaml")
+
+# Each factory returns an LlmAgent with its scoped BaseToolset
+catalog_agent = create_catalog_agent(config)
+introspect_agent = create_introspect_agent(config)
+mapping_agent = create_mapping_agent(config)
+```
+
+Or construct agents directly with toolsets:
+
+```python
+from sdc_agents.common.config import load_config
 from sdc_agents.toolsets.catalog import CatalogToolset
 from google.adk.agents import LlmAgent
 
@@ -113,12 +140,13 @@ config = load_config("sdc-agents.yaml")
 catalog_agent = LlmAgent(
     name="catalog",
     model="gemini-2.0-flash",
+    description="Discovers SDC4 schemas from SDCStudio Catalog API.",
     instruction="Discover published SDC4 schemas and download artifacts.",
-    tools=CatalogToolset(config=config).get_tools(),
+    tools=[CatalogToolset(config=config)],
 )
 ```
 
-### Usage (MCP — Secondary)
+### Usage (MCP — Secondary, Future)
 
 Each agent can also be served as an MCP server for non-ADK clients:
 
@@ -130,17 +158,18 @@ sdc-agents serve --mcp catalog
 sdc-agents serve --mcp introspect
 ```
 
-### Usage (CLI)
+### Testing
 
 ```bash
-# List published schemas
-sdc-agents catalog list
+# Run all tests
+pytest
 
-# Introspect a datasource
-sdc-agents introspect my_database
+# Run with coverage
+pytest --cov=sdc_agents
 
-# Suggest mappings
-sdc-agents mapping suggest --schema <ct_id> --datasource my_database
+# Run specific test modules
+pytest tests/toolsets/test_catalog.py
+pytest tests/security/
 ```
 
 ---
@@ -158,11 +187,21 @@ sdc-agents mapping suggest --schema <ct_id> --datasource my_database
 
 | Phase | Goal | Status |
 |---|---|---|
-| **Phase 1** | Catalog, Introspect, and Mapping agents (ADK BaseToolset + LlmAgent) | Planned |
+| **Phase 1** | Catalog, Introspect, and Mapping agents with shared infra | **Complete** |
 | **Phase 2** | Generator and Validation agents, OpenAPIToolset integration | Planned |
 | **Phase 3** | VaaS artifact packages + Distribution Agent | Planned |
 | **Phase 4** | Production hardening, PyPI, MCP export adapters, ADK Integration Page | Planned |
-| **Phase 5** | Component Assembly Agent (future — create-and-consume) | Future |
+| **Phase 5** | Knowledge Agent + Component Assembly Agent | Future |
+
+### Phase 1 — What's Implemented
+
+- **Common infrastructure**: Pydantic config with `${VAR}` substitution, append-only JSONL audit logger with credential redaction, cache manager
+- **CatalogToolset** (5 tools): `catalog_list_schemas`, `catalog_get_schema`, `catalog_download_schema_rdf`, `catalog_download_skeleton`, `catalog_download_ontologies` — httpx async, cache-first for immutable schemas
+- **IntrospectToolset** (2 tools): `introspect_sql` (SELECT-only enforcement), `introspect_csv` (type inference: boolean, integer, decimal, date, datetime, time, email, URL, UUID, string)
+- **MappingToolset** (3 tools): `mapping_suggest` (type compatibility + name similarity), `mapping_confirm`, `mapping_list`
+- **Agent factories**: `create_catalog_agent()`, `create_introspect_agent()`, `create_mapping_agent()` — each returns `LlmAgent` with scoped toolset
+- **68 tests, 92% coverage** — including security isolation tests (SQL write rejection, datasource name enforcement, no cross-scope tool leakage)
+- **Consumer-first**: all tests use `httpx.MockTransport` and `aiosqlite` — zero live SDCStudio dependency
 
 ---
 
