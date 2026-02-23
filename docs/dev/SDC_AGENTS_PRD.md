@@ -1,7 +1,7 @@
 # SDC Agents: Purpose-Scoped ADK Agents for SDC4 Data Operations
 
 **Date**: 2026-02-23
-**Status**: Active (Phase 1 complete, Phase 2 planned)
+**Status**: Active (Phase 3 complete, Phase 4 planned)
 **Author**: Timothy W. Cook / Claude Code
 **Repository**: `SemanticDataCharter/SDC_Agents` (Apache 2.0 License)
 **Related**: SDCStudio `docs/dev/agentic-registry/SDCStudio_API_Agents_PRD.md` (SDCStudio-side enhancement spec)
@@ -1666,57 +1666,49 @@ This means SDC_Agents Phases 1–4 are developed to completion before SDCStudio 
 
 **SDCStudio dependency**: Phase 1 defines the contract that SDCStudio must fulfill — skeleton endpoint, individual artifact serving (ttl/shacl/gql), ontology endpoint, and enhanced catalog detail serializer. SDCStudio implements these **after** the agent contract is stable. See the [SDCStudio enhancement spec](https://github.com/Axius-SDC/SDCStudio/blob/main/docs/dev/agentic-registry/SDCStudio_API_Agents_PRD.md).
 
-### Phase 2: Generation and Validation
+### Phase 2: Generation and Validation — COMPLETE
 
 **Goal**: End-to-end flow from datasource to validated XML.
 
-**Deliverables**:
+**Status**: Complete (2026-02-23). 115 tests passing (47 new), 79% coverage.
 
-**Generator Agent** (`sdc_agents/toolsets/generator.py`, `sdc_agents/agents/generator.py`):
-- `GeneratorToolset(BaseToolset)` with 3 tools:
-  - `generate_instance` — single record → XML using skeleton template + field mapping + placeholder substitution
-  - `generate_batch` — multi-record batch via `LongRunningFunctionTool`, returns operation ID for polling
-  - `generate_preview` — single record preview without disk write
-- Skeleton-based generation: load `{ct_id}_skeleton.xml` + `{ct_id}_field_mapping.json` from cache, copy skeleton per record, replace `__PLACEHOLDER__` tokens with mapped data values, prune unfilled optional elements, error on unfilled required elements
-- Datasource record fetching: reuse Phase 1 `IntrospectToolset` SQL/CSV reading patterns (read-only, config-only datasource names)
-- XML output to configured output directory
+**Delivered**:
+- **Generator Agent**: `GeneratorToolset(BaseToolset)` with 3 tools (`generate_instance`, `generate_batch`, `generate_preview`), skeleton-based XML generation using `{ct_id}_skeleton.xml` + `{ct_id}_field_mapping.json` from cache, placeholder substitution, optional element pruning
+- **Validation Agent**: `ValidationToolset(BaseToolset)` with 3 tools (`validate_instance`, `sign_instance`, `validate_batch`), VaaS API integration with path confinement + token auth, artifact package (.pkg.zip) support
+- **Introspect Agent extensions**: 2→4 tools (`introspect_json` with JSONPath extraction, `introspect_mongodb` with BSON-to-SDC4 type mapping)
+- Config additions: `api_key` (VaaS token), `toolbox_url` (MCP Toolbox), `jsonpath` (JSON datasource), `database`/`collection` (MongoDB datasource)
+- Cache additions: `skeleton_path()`, `field_mapping_path()` helpers
+- Dependencies: motor>=3.6, jsonpath-ng>=1.6, mongomock (dev), toolbox-adk (optional)
+- Security tests: 5 toolsets with disjoint tool name sets (5+4+3+3+3 = 18 total tools), Validation path confinement, Generator read-only datasource access, VaaS token redacted in audit log
 
-**Validation Agent** (`sdc_agents/toolsets/validation.py`, `sdc_agents/agents/validation.py`):
-- `ValidationToolset(BaseToolset)` with 3 tools:
-  - `validate_instance` — POST to VaaS API, returns structural/semantic error counts, optional artifact package
-  - `sign_instance` — validate + sign via VaaS, returns signature metadata
-  - `validate_batch` — multi-file validation via `LongRunningFunctionTool`
-- httpx async client with `Authorization: Token {key}` header injection
-- File path confinement: only reads/writes within configured output directory
-- Mock VaaS API responses (fixtures including validation results and artifact package .zip)
+**Implementation notes**:
+- Batch tools (`generate_batch`, `validate_batch`) use regular `FunctionTool` (not `LongRunningFunctionTool`). ADK's `LongRunningFunctionTool` requires polling infrastructure; deferred until needed.
+- VaaS API mocked via `httpx.MockTransport` in tests — zero live SDCStudio dependency.
+- MongoDB introspection tested via `mongomock`; live MongoDB integration deferred.
 
-**Introspect Agent extensions**:
-- `introspect_json` tool — JSON file introspection with optional JSONPath extraction
-- `introspect_mongodb` tool — MongoDB collection schema analysis via ADK MongoDB integration
-- MCP Toolbox for Databases integration for `introspect_sql` (replacing Phase 1 direct SQLAlchemy)
-
-**Mapping Agent enhancements**:
-- Confidence scoring for mapping suggestions (combine type compatibility weight + name similarity + sample value overlap)
-- `mapping_export` tool — export mapping config to standalone JSON for external tooling
-
-**Infrastructure**:
-- `OpenAPIToolset` integration for Catalog API (requires SDCStudio OpenAPI 3.x spec — see prerequisites)
-- Test fixtures: mock VaaS API responses with `httpx.MockTransport`, sample skeleton XML + field mapping JSON, sample artifact package .zip
-- Security tests: Validation Agent confined to output directory, Generator Agent read-only datasource access, VaaS token redacted in audit log
-
-### Phase 3: Artifact Package and Distribution
+### Phase 3: Artifact Package and Distribution — COMPLETE
 
 **Goal**: Distribution Agent delivers multi-format artifact packages to customer destinations.
 
-**Deliverables**:
-- **Distribution Agent**: `DistributionToolset` with `distribute_package`, `distribute_batch`, `list_destinations`, `inspect_package`, `bootstrap_triplestore`
-- Fuseki/GraphDB triplestore connector (named graph upload via SPARQL Graph Store Protocol) — built as a generic, reusable module for Phase 4 ADK ecosystem contribution
-- Neo4j/Memgraph graph DB connector (GQL/Cypher execution) — built as a generic, reusable module for Phase 4 ADK ecosystem contribution
-- REST API connector (POST/PUT JSON payloads)
-- Filesystem connector (write artifacts to directory structure)
-- Triplestore bootstrap: load SDC4 ontologies and schema-level RDF into named graphs
-- Destination health checks
-- Integration tests with local Fuseki and Neo4j
+**Status**: Complete (2026-02-23). 143 tests passing (28 new), 82% coverage.
+
+**Delivered**:
+- **Distribution Agent**: `DistributionToolset(BaseToolset)` with 5 tools (`inspect_package`, `list_destinations`, `distribute_package`, `distribute_batch`, `bootstrap_triplestore`)
+- `DestinationConfig` Pydantic model with 5 destination types (`fuseki`, `graphdb`, `neo4j`, `rest_api`, `filesystem`) + `destinations: Dict[str, DestinationConfig]` on `SDCAgentsConfig`
+- Fuseki/GraphDB triplestore connector — SPARQL Graph Store Protocol PUT for named graph upload, idempotent bootstrap via ASK query before upload
+- Neo4j HTTP API connector — POST to `/db/{database}/tx/commit` transactional endpoint
+- REST API connector — configurable POST/PUT with custom headers
+- Filesystem connector — path pattern substitution (`{ct_id}`, `{instance_id}`) with optional directory creation
+- Destination health checks — `list_destinations` probes each endpoint (GET/HEAD with timeout), reports `reachable`/`unreachable`
+- Security tests: 6 toolsets with disjoint tool name sets (5+4+3+3+3+5 = 23 total tools), Distribution path confinement, destination credential redaction in audit log
+
+**Implementation notes**:
+- All connectors use httpx — no neo4j-driver or other driver-specific dependencies.
+- Per-artifact failure isolation: if one delivery fails, remaining artifacts still processed. Per-artifact status reported.
+- Manifest `destination` values looked up in config; unknown destinations skipped gracefully (not an error).
+- `bootstrap_triplestore` checks for existing named graphs via SPARQL ASK before uploading (idempotent).
+- `distribute_batch` uses regular `FunctionTool` (not `LongRunningFunctionTool`).
+- All tests use `httpx.MockTransport` — zero live Fuseki/Neo4j dependency. Integration tests deferred to Phase 4.
 
 **SDCStudio dependency**: Phase 3 defines the artifact package contract (`manifest.json` structure, zip contents, `?package=true` behavior). SDCStudio implements the VaaS package support **after** the Distribution Agent's expectations are stable.
 

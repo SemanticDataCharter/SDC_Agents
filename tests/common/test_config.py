@@ -118,3 +118,83 @@ def test_datasource_mongodb_fields():
     assert ds.type == "mongodb"
     assert ds.database == "clinical"
     assert ds.collection == "lab_results"
+
+
+# --- Destination config tests ---
+
+
+def test_destinations_default_empty():
+    """Destinations default to empty dict."""
+    config = SDCAgentsConfig()
+    assert config.destinations == {}
+
+
+def test_destination_fuseki_config():
+    """Fuseki destination config is parsed correctly."""
+    config = SDCAgentsConfig(
+        destinations={
+            "triplestore": {
+                "type": "fuseki",
+                "endpoint": "http://localhost:3030/sdc4/data",
+                "auth": "Basic dXNlcjpwYXNz",
+                "upload_method": "named_graph",
+            }
+        }
+    )
+    dest = config.destinations["triplestore"]
+    assert dest.type == "fuseki"
+    assert dest.endpoint == "http://localhost:3030/sdc4/data"
+    assert dest.auth == "Basic dXNlcjpwYXNz"
+    assert dest.upload_method == "named_graph"
+
+
+def test_destination_neo4j_config():
+    """Neo4j destination config is parsed correctly."""
+    config = SDCAgentsConfig(
+        destinations={
+            "graph_db": {
+                "type": "neo4j",
+                "endpoint": "http://localhost:7474",
+                "database": "sdc4",
+            }
+        }
+    )
+    dest = config.destinations["graph_db"]
+    assert dest.type == "neo4j"
+    assert dest.endpoint == "http://localhost:7474"
+    assert dest.database == "sdc4"
+
+
+def test_destination_rest_api_config():
+    """REST API destination config is parsed correctly."""
+    config = SDCAgentsConfig(
+        destinations={
+            "api": {
+                "type": "rest_api",
+                "endpoint": "http://localhost:9200/sdc4",
+                "method": "POST",
+                "headers": {"Authorization": "Bearer tok"},
+            }
+        }
+    )
+    dest = config.destinations["api"]
+    assert dest.type == "rest_api"
+    assert dest.method == "POST"
+    assert dest.headers == {"Authorization": "Bearer tok"}
+
+
+def test_destination_filesystem_config():
+    """Filesystem destination config is parsed correctly."""
+    config = SDCAgentsConfig(
+        destinations={
+            "archive": {
+                "type": "filesystem",
+                "path": "./archive/{ct_id}/{instance_id}/",
+                "create_directories": True,
+            }
+        }
+    )
+    dest = config.destinations["archive"]
+    assert dest.type == "filesystem"
+    assert dest.path == "./archive/{ct_id}/{instance_id}/"
+    assert dest.create_directories is True

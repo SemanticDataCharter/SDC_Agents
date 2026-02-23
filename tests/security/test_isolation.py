@@ -14,6 +14,7 @@ import pytest
 
 from sdc_agents.common.config import SDCAgentsConfig
 from sdc_agents.toolsets.catalog import CatalogToolset
+from sdc_agents.toolsets.distribution import DistributionToolset
 from sdc_agents.toolsets.generator import GeneratorToolset
 from sdc_agents.toolsets.introspect import IntrospectToolset
 from sdc_agents.toolsets.mapping import MappingToolset
@@ -109,6 +110,24 @@ async def test_validation_only_exposes_validation_tools(security_config):
     assert not names & {"catalog_list_schemas", "introspect_sql", "generate_instance"}
 
 
+async def test_distribution_only_exposes_distribution_tools(security_config):
+    """Distribution toolset has exactly 5 distribution-scoped tools."""
+    transport = httpx.MockTransport(lambda r: httpx.Response(200, json={}))
+    client = httpx.AsyncClient(transport=transport, base_url="https://test.local")
+    toolset = DistributionToolset(config=security_config, http_client=client)
+    tools = await toolset.get_tools()
+    names = {t.name for t in tools}
+    assert names == {
+        "inspect_package",
+        "list_destinations",
+        "distribute_package",
+        "distribute_batch",
+        "bootstrap_triplestore",
+    }
+    # No other toolset tools
+    assert not names & {"catalog_list_schemas", "introspect_sql", "generate_instance", "validate_instance"}
+
+
 # --- SQL write rejection ---
 
 
@@ -174,7 +193,7 @@ async def test_unknown_csv_datasource_raises_keyerror(security_config):
 
 
 async def test_no_tool_name_overlap():
-    """Tool names across all 5 toolsets are disjoint."""
+    """Tool names across all 6 toolsets are disjoint."""
     config = SDCAgentsConfig(
         sdcstudio={"base_url": "https://test.local"},
     )
@@ -186,6 +205,7 @@ async def test_no_tool_name_overlap():
     mapping = MappingToolset(config=config)
     generator = GeneratorToolset(config=config)
     validation = ValidationToolset(config=config, http_client=client)
+    distribution = DistributionToolset(config=config, http_client=client)
 
     all_toolsets = {
         "catalog": {t.name for t in await catalog.get_tools()},
@@ -193,14 +213,16 @@ async def test_no_tool_name_overlap():
         "mapping": {t.name for t in await mapping.get_tools()},
         "generator": {t.name for t in await generator.get_tools()},
         "validation": {t.name for t in await validation.get_tools()},
+        "distribution": {t.name for t in await distribution.get_tools()},
     }
 
-    # Verify expected counts
+    # Verify expected counts (5+4+3+3+3+5 = 23 total)
     assert len(all_toolsets["catalog"]) == 5
     assert len(all_toolsets["introspect"]) == 4
     assert len(all_toolsets["mapping"]) == 3
     assert len(all_toolsets["generator"]) == 3
     assert len(all_toolsets["validation"]) == 3
+    assert len(all_toolsets["distribution"]) == 5
 
     # All pairwise intersections are empty
     names = list(all_toolsets.keys())
@@ -245,6 +267,31 @@ async def test_validation_rejects_relative_traversal(security_config):
         await toolset.validate_instance(xml_path=traversal)
 
 
+# --- Distribution path confinement ---
+
+
+async def test_distribution_rejects_outside_path(security_config):
+    """Distribution rejects package paths outside output directory."""
+    transport = httpx.MockTransport(lambda r: httpx.Response(200, json={}))
+    client = httpx.AsyncClient(transport=transport, base_url="https://test.local")
+    toolset = DistributionToolset(config=security_config, http_client=client)
+
+    with pytest.raises(PermissionError, match="outside the output directory"):
+        await toolset.inspect_package("/etc/passwd")
+
+
+async def test_distribution_rejects_traversal(security_config):
+    """Distribution rejects path traversal attacks."""
+    transport = httpx.MockTransport(lambda r: httpx.Response(200, json={}))
+    client = httpx.AsyncClient(transport=transport, base_url="https://test.local")
+    toolset = DistributionToolset(config=security_config, http_client=client)
+
+    output_dir = security_config.output.directory
+    traversal = f"{output_dir}/../../../etc/passwd"
+    with pytest.raises(PermissionError, match="outside the output directory"):
+        await toolset.distribute_package(traversal)
+
+
 # --- Generator output directory confinement ---
 
 
@@ -256,6 +303,28 @@ async def test_generator_writes_to_output_dir(security_config):
 
 
 # --- VaaS token redaction in audit ---
+
+
+async def test_destination_credentials_redacted_in_audit(security_config):
+    """Destination auth credentials are redacted in audit logs."""
+    from sdc_agents.common.audit import AuditLogger
+
+    audit = AuditLogger(security_config.audit.path, security_config.audit.log_level)
+
+    import time
+
+    audit.log(
+        agent="distribution",
+        tool="distribute_package",
+        inputs={"package_path": "/test.pkg.zip", "auth_token": "secret-cred"},
+        outputs={"status": "ok"},
+        start_time=time.monotonic(),
+    )
+
+    log_content = Path(security_config.audit.path).read_text()
+    record = json.loads(log_content.strip().split("\n")[-1])
+    assert record["inputs"]["auth_token"] == "***REDACTED***"
+    assert "secret-cred" not in log_content
 
 
 async def test_vaas_token_redacted_in_audit(security_config):

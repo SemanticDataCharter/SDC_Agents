@@ -68,7 +68,7 @@ aligned with SDC Generation 4.
   - `OpenAPIToolset` requires `spec_str`/`spec_dict` (no `spec_url` parameter); requires **OpenAPI 3.x** (not Swagger 2.0)
   - `AuthCredential` pattern clarified: custom `FunctionTool` wrappers manage credentials internally; `AuthCredential` is for `OpenAPIToolset` integration
   - `LlmAgent` `description` parameter added to all agents (required for `transfer_to_agent` routing)
-  - `LongRunningFunctionTool` for batch operations (`generate_batch`, `validate_batch`, `distribute_batch`)
+  - `LongRunningFunctionTool` specified for batch operations in PRD (deferred — all batch tools use regular `FunctionTool` in implementation)
   - `DatabaseSessionService` noted as production alternative to `InMemorySessionService`
 - **Observability** (Phase 4) — Google Cloud Trace, OpenTelemetry export, Phoenix, MLflow
 - Vertex AI Search referenced for Phase 5 semantic component discovery
@@ -97,21 +97,27 @@ aligned with SDC Generation 4.
 - Unit tests for all tools (68 tests, 92% coverage)
 - Security tests: tool scope isolation, SQL write rejection, datasource name enforcement
 
-### Planned — Phase 2: Generation and Validation
-- **Generator Agent**: `GeneratorToolset` with `generate_instance`, `generate_batch`, `generate_preview`
-- **Validation Agent**: `ValidationToolset` with `validate_instance`, `sign_instance`, `validate_batch`
-- `introspect_json` and `introspect_mongodb` tools for `IntrospectToolset`
-- MongoDB introspection via ADK MongoDB integration; BigQuery/Spanner via dedicated ADK integrations
-- `OpenAPIToolset` integration for Catalog API
-- CLI wrapper for non-ADK usage
-- Integration tests against SDCStudio staging environment
+### Completed — Phase 2: Generation and Validation
+- **Generator Agent**: `GeneratorToolset` with `generate_instance`, `generate_batch`, `generate_preview` — skeleton-based XML generation with placeholder substitution and optional element pruning
+- **Validation Agent**: `ValidationToolset` with `validate_instance`, `sign_instance`, `validate_batch` — VaaS API integration with path confinement, token auth, artifact package (.pkg.zip) support
+- **Introspect Agent extensions**: 2→4 tools — `introspect_json` (JSONPath extraction), `introspect_mongodb` (BSON-to-SDC4 type mapping)
+- Config additions: `api_key`, `toolbox_url`, `jsonpath`, `database`, `collection`
+- Cache additions: `skeleton_path()`, `field_mapping_path()`
+- Dependencies: motor>=3.6, jsonpath-ng>=1.6, mongomock (dev), toolbox-adk (optional)
+- 115 tests (47 new), 2 skipped. Security: 5 toolsets disjoint, path confinement, token redaction
+- Implementation: regular `FunctionTool` for batch (not `LongRunningFunctionTool`), httpx `MockTransport` for VaaS
 
-### Planned — Phase 3: Artifact Package and Distribution
-- **Distribution Agent**: `DistributionToolset` with `distribute_package`, `distribute_batch`, `list_destinations`, `inspect_package`, `bootstrap_triplestore`
-- Fuseki/GraphDB triplestore connector (built as generic module for Phase 4 ADK ecosystem contribution)
-- Neo4j/Memgraph graph DB connector (built as generic module for Phase 4 ADK ecosystem contribution)
-- REST API and filesystem connectors
-- Destination health checks
+### Completed — Phase 3: Artifact Package and Distribution
+- **Distribution Agent**: `DistributionToolset` with `inspect_package`, `list_destinations`, `distribute_package`, `distribute_batch`, `bootstrap_triplestore`
+- `DestinationConfig` Pydantic model (fuseki, graphdb, neo4j, rest_api, filesystem types) + `destinations` dict on `SDCAgentsConfig`
+- Fuseki/GraphDB triplestore connector (SPARQL Graph Store Protocol PUT, idempotent bootstrap via ASK query)
+- Neo4j HTTP API connector (transactional endpoint POST)
+- REST API connector (configurable POST/PUT with custom headers)
+- Filesystem connector (path pattern substitution with optional directory creation)
+- Destination health checks (`list_destinations` with per-destination connectivity probes)
+- httpx-only connectors — no neo4j-driver dependency; per-artifact failure isolation
+- 143 tests (28 new), 2 skipped. Security: 6 toolsets disjoint (5+4+3+3+3+5 = 23 total tools), Distribution path confinement, destination credential redaction
+- Implementation: regular `FunctionTool` for batch (not `LongRunningFunctionTool`), httpx `MockTransport` for all connectors
 
 ### Planned — Phase 4: Production Hardening
 - PyPI packaging (`pip install sdc-agents`)

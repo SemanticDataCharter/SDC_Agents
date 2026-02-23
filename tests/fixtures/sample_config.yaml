@@ -25,3 +25,12 @@ output:
   directory: "./test-output"
   formats:
     - "xml"
+
+destinations:
+  test_triplestore:
+    type: "fuseki"
+    endpoint: "http://localhost:3030/test/data"
+  test_archive:
+    type: "filesystem"
+    path: "./test-archive/{ct_id}/{instance_id}/"
+    create_directories: true
