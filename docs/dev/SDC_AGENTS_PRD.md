@@ -28,6 +28,8 @@ A single monolithic agent with broad access to datasources, file systems, and re
 | **Generator Agent** | XML instance generation | Mapping configs, datasource (read-only) | SDCStudio APIs, schema downloads |
 | **Validation Agent** | Instance validation and signing | VaaS API (token auth), local XML files | Datasources, schema management |
 | **Distribution Agent** | Artifact package routing | Unpacked artifact files, configured destinations | SDCStudio APIs, datasources |
+| **Knowledge Agent** *(Phase 5)* | Customer context ingestion | Customer-provided files (read-only) | SDCStudio APIs, datasources, network |
+| **Component Assembly Agent** *(Phase 5)* | Autonomous model assembly | Catalog API, Assembly API (token auth), cached knowledge | Datasources directly, VaaS API |
 
 Each agent is an ADK `LlmAgent` with its own `BaseToolset` implementation. Tools are Python functions wrapped in `FunctionTool` — ADK derives input/output schemas from type hints and docstrings. An orchestrating agent, customer pipeline, or human operator composes them via `ToolContext.actions.transfer_to_agent` for sequential handoff — but no single agent can reach across boundaries. A compromised or misbehaving agent has blast radius limited to its scope.
 
@@ -1172,10 +1174,11 @@ CSV columns are untyped strings. Types are inferred from sample values:
 Operator-controlled YAML configuration (`sdc-agents.yaml`):
 
 ```yaml
-# SDCStudio connection (used by Catalog Agent and Validation Agent)
+# SDCStudio connection (used by Catalog, Validation, and Assembly Agents)
 sdcstudio:
   base_url: "https://sdcstudio.com"
-  api_key: "${SDC_API_KEY}"          # Validation Agent only; env var reference
+  api_key: "${SDC_API_KEY}"          # Validation + Assembly Agents; env var reference
+  default_library_project: "SDC4-Core"  # Default project for contextual components (D7)
 
 # Cache and working directories
 cache:
@@ -1207,6 +1210,26 @@ datasources:
     type: json
     path: "./data/sensor_readings.json"
     jsonpath: "$.readings[*]"
+
+# Knowledge resources (used by Knowledge Agent, Phase 5)
+# Customer-side contextual resources for semantic understanding.
+# NOTE: Read-only access, no network. Knowledge stays local.
+knowledge:
+  data_dictionary:
+    type: csv
+    path: "./docs/data_dictionary.csv"
+
+  policies:
+    type: pdf
+    path: "./docs/data_governance_policy.pdf"
+
+  domain_glossary:
+    type: json
+    path: "./docs/glossary.json"
+
+  existing_ontology:
+    type: ttl
+    path: "./docs/customer_vocab.ttl"
 
 # Output settings (used by Generator Agent and Validation Agent)
 output:
@@ -1337,12 +1360,13 @@ runner = Runner(
 |---|---|---|
 | Datasource connection strings | Introspect Agent, Generator Agent | `IntrospectToolset(config=...)`, `GeneratorToolset(config=...)` |
 | VaaS API token | Validation Agent only | `ValidationToolset(config=...)` with `AuthCredential` |
-| SDCStudio base URL | Catalog Agent, Validation Agent | `CatalogToolset(config=...)`, `ValidationToolset(config=...)` |
+| Assembly API key | Component Assembly Agent only *(Phase 5)* | `AssemblyToolset(config=...)` with `AuthCredential` |
+| SDCStudio base URL | Catalog Agent, Validation Agent, Component Assembly Agent | `CatalogToolset(config=...)`, `ValidationToolset(config=...)`, `AssemblyToolset(config=...)` |
 | Triplestore credentials | Distribution Agent only | `DistributionToolset(config=...)` |
 | Graph DB credentials | Distribution Agent only | `DistributionToolset(config=...)` |
 | REST API tokens | Distribution Agent only | `DistributionToolset(config=...)` |
 
-No agent receives credentials it does not need. The Mapping Agent's `MappingToolset` constructor receives only the cache directory path.
+No agent receives credentials it does not need. The Mapping Agent's `MappingToolset` and Knowledge Agent's `KnowledgeToolset` constructors receive only the cache directory path and knowledge resource paths — no network credentials.
 
 ---
 
@@ -1444,6 +1468,40 @@ Customers handling sensitive data should:
 **Decision**: SDC Agents provides scoped agents composable within the ADK framework. Customers can also use MCP for framework-agnostic integration. SDC does not impose a specific orchestration pattern — customers bring their own pipeline logic using ADK sub-agents, `transfer_to_agent`, or plain scripts.
 
 **Rationale**: ADK provides the native agent composition primitives (sub-agents, tool context, handoff) that SDC Agents leverages. MCP export ensures compatibility with non-ADK ecosystems. Staying out of the workflow/UI business avoids competing with partners and keeps the project focused on what only SDC can do — trusted schema-aware data transformation.
+
+### D3: Reference, never copy
+
+**Decision**: Components are referenced by their existing `ct_id` — never copied into the target project. A component's identity is permanent and shared across models and domains. This is a core SDC principle.
+
+The assembly endpoint creates only new Clusters (when a needed grouping doesn't already exist) and the DM itself (wiring together referenced components and Clusters). Everything below the Cluster level already exists in the catalog.
+
+### D4: Fully autonomous — no human-in-the-loop
+
+**Decision**: The assembly pipeline produces a **published, generated data model** — not an unpublished draft for review. The output is immediately available in the SDCStudio catalog, ready for consumption by Phases 1–4 agents.
+
+**Rationale**: Domain experts and data stewards unleash the agents on repositories. Axius maintains standards-compliant component libraries. The agents do the assembly work that previously required ontology and graph database specialists.
+
+### D5: Assembly API authentication
+
+**Decision**: API key auth (same pattern as VaaS). The API key maps to a **Modeler user** who has a **default project** selected in their SDCStudio settings. The assembly endpoint creates the DM in that project.
+
+### D6: Cluster naming by SDC_Agents
+
+**Decision**: The Component Assembly Agent proposes Cluster labels based on its analysis of the data source structure. SDCStudio accepts the labels as provided.
+
+### D7: Contextual component discovery via Default project
+
+**Decision**: SDCStudio maintains a **Default project** with standards-compliant contextual components (Audit, Attestation, Party, Protocol, Workflow, ACS). The assembly agent discovers these via the catalog API filtered to the Default project.
+
+The Default project name is available in config (`sdc-agents.yaml`) so customers can supplement with their own contextual libraries if needed.
+
+### D8: Arbitrarily complex data trees
+
+**Decision**: The assembly system supports nested Cluster hierarchies of arbitrary depth — Clusters within Clusters — reflecting the actual structure of the data source. Contextual components (Audit, Attestation, Party, etc.) from the Default project are attached to the DM's contextual slots.
+
+### D9: Intelligence on both sides
+
+**Decision**: SDC_Agents handles analysis intelligence (understand data sources, discover matching components, propose hierarchical structure, name Clusters). SDCStudio handles assembly intelligence (validate references, create Clusters, wire component references, publish, run full generation pipeline). The API boundary carries a structured tree spec, not raw data.
 
 ---
 
@@ -1568,16 +1626,16 @@ Phase 4 includes contributing an integration page to the `google/adk-docs` repos
 ### Out of Scope
 
 - **Modifying customer data** — all datasource access is strictly read-only
-- **Modifying SDCStudio data** — all API calls are read-only (Catalog) or validation/packaging (VaaS)
+- **Modifying existing SDCStudio data** — API calls are read-only (Catalog), validation/packaging (VaaS), or create-only (Assembly). No agent can edit or delete existing models or components.
 - **Real-time streaming** — batch processing only; streaming is future work
 - **Schema evolution/migration** — operator selects the target `ct_id` explicitly
 - **GUI** — CLI and ADK/MCP tools only; a web UI is a possible community contribution
 - **VaaS artifact package generation** — server-side transformation is an SDCStudio enhancement (see [SDCStudio enhancement spec](https://github.com/Axius-SDC/SDCStudio/blob/main/docs/dev/agentic-registry/SDCStudio_API_Agents_PRD.md))
 - **Destination-specific query/read-back** — the Distribution Agent writes to destinations but does not query them
 
-### Future: Component Assembly
+### Future: Component Assembly and Knowledge (Phase 5)
 
-**Creating new SDC4 schemas** is not in scope for Phases 1–4 — agents map to existing published models only. Phase 5 (future) will add a Component Assembly Agent that discovers published reusable components from the SDCStudio catalog and assembles them into bespoke data models via the SDCStudio API — shifting from consume-only to create-and-consume. See [Phase 5](#phase-5-component-assembly-agent-future).
+**Creating new SDC4 schemas** is not in scope for Phases 1–4 — agents map to existing published models only. Phase 5 adds the **Knowledge Agent** (customer context ingestion) and **Component Assembly Agent** (autonomous model assembly from catalog components). Components are referenced by `ct_id`, never copied. Only new Clusters and the DM are created. The output is a fully published, generated data model — no human-in-the-loop. See [Phase 5](#phase-5-component-assembly-and-knowledge-agents-future) and [Component Assembly Design](docs/dev/COMPONENT_ASSEMBLY_DESIGN.md) for decisions D3–D9.
 
 ---
 
@@ -1595,6 +1653,14 @@ Phase 4 includes contributing an integration page to the `google/adk-docs` repos
 
 6. **Multi-schema mapping**: Some datasources may map to multiple SDC4 schemas (e.g., a patient table producing both vitals and demographics instances). Deferred to Phase 2 or later?
 
+7. **Knowledge Agent scope**: Should the Knowledge Agent be a separate agent or an expansion of the Introspect Agent? The Introspect Agent already reads customer data sources — adding knowledge resource ingestion is a natural extension. But the security model may differ (knowledge resources are documentation, not live data).
+
+8. **Assembly validation failures**: If the assembly endpoint finds an invalid reference (unpublished component, incompatible type in a Cluster slot), does it reject the entire request or return a partial result with errors? Fail-closed (reject) is consistent with the existing security principles.
+
+9. **Component matching intelligence**: How much semantic matching intelligence should live in the Component Assembly Agent vs. SDCStudio? The agent has the customer's knowledge context; SDCStudio has the component metadata and type system. The matching logic likely needs both.
+
+10. **Multi-source assembly**: Can a single DM be assembled from components discovered across multiple data sources? E.g., patient demographics from a SQL database + lab results from CSV files → single Patient Record DM. This seems natural but adds complexity to the Cluster hierarchy design.
+
 ---
 
 ## Success Criteria
@@ -1610,3 +1676,4 @@ SDC Agents is successful when:
 7. Generated XML instances pass VaaS validation without structural errors
 8. The Apache 2.0 license and standalone repository enable community contributions without SDCStudio coupling
 9. End-to-end latency from datasource record to distributed artifacts is under 5 seconds per instance (excluding network latency to customer destinations)
+10. (Phase 5) The Component Assembly Agent can analyze a data source, discover matching catalog components, assemble a published data model via the Assembly API, and immediately consume it with Phases 1–4 agents — fully autonomously
