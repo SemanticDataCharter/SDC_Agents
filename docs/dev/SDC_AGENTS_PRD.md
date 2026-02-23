@@ -1510,13 +1510,23 @@ Customers handling sensitive data should:
 - Contribution guidelines and issue templates
 - Audit log viewer CLI (`sdc-agents audit show --agent distribution --last 24h`)
 
-### Phase 5: Component Assembly Agent (Future)
+### Phase 5: Component Assembly and Knowledge Agents (Future)
 
-**Goal**: Shift from consume-only to create-and-consume — agents can assemble bespoke SDC4 data models from published, reusable catalog components.
+**Goal**: Shift from consume-only to create-and-consume — agents analyze data sources, discover matching catalog components, and assemble published SDC4 data models autonomously.
 
-Phase 5 will add a **Component Assembly Agent** that discovers published reusable components from the SDCStudio catalog and assembles them into bespoke data models via the SDCStudio API. This transforms SDC Agents from a consume-only pipeline (map data to existing schemas) into a create-and-consume platform (build new schemas from catalog building blocks, then map data to them).
+Phase 5 adds two agents:
 
-**Scope and deliverables to be defined after Phase 4 is complete.**
+- **Knowledge Agent**: Ingests customer-side contextual resources (data dictionaries, PDFs, metadata repositories, existing ontologies) into a local knowledge index (`.sdc-cache/knowledge/`). Provides semantic context to the Component Assembly Agent for better component matching, Cluster naming, and contextual component selection. Read-only, no network access.
+
+- **Component Assembly Agent**: Analyzes data sources (using Introspect Agent results + Knowledge Agent context), discovers matching published components from the SDCStudio catalog, proposes arbitrarily deep Cluster hierarchies reflecting the data source structure, selects contextual components (Audit, Attestation, Party, etc.) from SDCStudio's Default project library, and calls the SDCStudio assembly API. The output is a **fully published, generated data model** — immediately available in the catalog for Phases 1–4 consumption. No human-in-the-loop.
+
+**Key principles** (see `docs/dev/COMPONENT_ASSEMBLY_DESIGN.md` for full design decisions):
+- Components are **referenced by `ct_id`**, never copied — reuse across models and domains is a core SDC feature
+- Only **new Clusters and the DM** are created; all component-level artifacts already exist
+- Assembly API authentication via API key → Modeler user → default project (same pattern as VaaS)
+- Intelligence on both sides: SDC_Agents handles analysis and discovery; SDCStudio handles assembly, validation, publication, and artifact generation
+
+**SDCStudio dependency**: Phase 5 requires a new `POST /api/v1/dmgen/assemble/` endpoint that accepts a hierarchical tree spec of component/Cluster references, creates Clusters, wires the DM, publishes, and runs the full generation pipeline.
 
 ---
 
