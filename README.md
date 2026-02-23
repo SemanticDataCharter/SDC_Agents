@@ -267,8 +267,9 @@ pytest tests/security/
 | **Phase 1** | Catalog, Introspect, and Mapping agents with shared infra | **Complete** |
 | **Phase 2** | Generator and Validation agents, Introspect extensions | **Complete** |
 | **Phase 3** | Distribution Agent with multi-destination delivery | **Complete** |
-| **Phase 4** | Production hardening, PyPI, MCP export adapters, ADK Integration Page | **In Progress** |
+| **Phase 4** | Production hardening: CLI, Docker, CI/CD, MCP export adapters | **In Progress** |
 | **Phase 5** | Knowledge Agent + Component Assembly Agent | Future |
+| **Phase 6** | ADK ecosystem contributions (`adk-sparql-tools`, Integration Page) | Future |
 
 ### What's Implemented (Phases 1–3)
 

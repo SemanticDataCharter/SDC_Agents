@@ -134,10 +134,6 @@ aligned with SDC Generation 4.
 
 ### Planned — Phase 4 (Remaining)
 - MCP export adapters (per-agent MCP server mode)
-- ADK Integration Page contribution to `google/adk-docs`
-- **ADK Ecosystem Contribution** to `google/adk-docs` integrations directory:
-  - `adk-sparql-tools` — SPARQL 1.1 / Fuseki / GraphDB (no triplestore integration exists in ADK ecosystem)
-  - ~~`adk-neo4j-tools`~~ — superseded by MCP Toolbox for Databases (Neo4j + Dgraph support)
 - Comprehensive documentation and example configurations
 
 ### Planned — Phase 5: Component Assembly and Knowledge (Future)
@@ -147,6 +143,12 @@ aligned with SDC Generation 4.
 - Components referenced by `ct_id`, never copied (D3)
 - Contextual components (Audit, Attestation, Party, etc.) from Default project library (D7)
 - SDCStudio dependency: `POST /api/v1/dmgen/assemble/` endpoint
+
+### Planned — Phase 6: ADK Ecosystem Contributions (Future)
+- ADK Integration Page contribution to `google/adk-docs`
+- **ADK Ecosystem Contribution** to `google/adk-docs` integrations directory:
+  - `adk-sparql-tools` — SPARQL 1.1 / Fuseki / GraphDB (no triplestore integration exists in ADK ecosystem)
+  - ~~`adk-neo4j-tools`~~ — superseded by MCP Toolbox for Databases (Neo4j + Dgraph support)
 
 ---
 
