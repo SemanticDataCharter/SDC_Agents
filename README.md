@@ -253,6 +253,7 @@ pytest tests/security/
 
 ## Documentation
 
+- **[User Documentation](docs/user/index.md)** — configuration, tool reference, MCP integration, workflow guides
 - **[Product Requirements](docs/dev/SDC_AGENTS_PRD.md)** — full agent specifications, tools, security model, type mapping tables
 - **[Contributing](CONTRIBUTING.md)** — development setup, coding standards, PR workflow
 - **[Security Policy](SECURITY.md)** — vulnerability reporting, agent isolation model
@@ -267,7 +268,7 @@ pytest tests/security/
 | **Phase 1** | Catalog, Introspect, and Mapping agents with shared infra | **Complete** |
 | **Phase 2** | Generator and Validation agents, Introspect extensions | **Complete** |
 | **Phase 3** | Distribution Agent with multi-destination delivery | **Complete** |
-| **Phase 4** | Production hardening: CLI, Docker, CI/CD, MCP export adapters | **In Progress** |
+| **Phase 4** | Production hardening: CLI, Docker, CI/CD, MCP export, documentation | **Complete** |
 | **Phase 5** | Knowledge Agent + Component Assembly Agent | Future |
 | **Phase 6** | ADK ecosystem contributions (`adk-sparql-tools`, Integration Page) | Future |
 
