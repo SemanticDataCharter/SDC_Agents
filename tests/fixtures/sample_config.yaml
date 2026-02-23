@@ -1,0 +1,23 @@
+sdcstudio:
+  base_url: "https://sdcstudio.test.local"
+
+cache:
+  root: ".test-cache"
+  ttl_hours: 1
+
+audit:
+  path: ".test-cache/audit.jsonl"
+  log_level: "verbose"
+
+datasources:
+  test_db:
+    type: "sql"
+    connection_string: "sqlite+aiosqlite://"
+  test_csv:
+    type: "csv"
+    path: "tests/fixtures/sample_data/lab_results.csv"
+
+output:
+  directory: "./test-output"
+  formats:
+    - "xml"

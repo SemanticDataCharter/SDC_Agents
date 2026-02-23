@@ -1,0 +1,28 @@
+# SDC Agents Configuration
+# Copy to sdc-agents.yaml and fill in values.
+# Environment variables can be used with ${VAR_NAME} syntax.
+
+sdcstudio:
+  base_url: "https://sdcstudio.example.com"
+  # No auth required for Catalog API (public, read-only)
+
+cache:
+  root: ".sdc-cache"
+  ttl_hours: 24
+
+audit:
+  path: ".sdc-cache/audit.jsonl"
+  log_level: "standard"  # "standard" summarizes outputs; "verbose" logs full payloads
+
+datasources:
+  lab_db:
+    type: "sql"
+    connection_string: "${LAB_DB_CONNECTION}"
+  patient_csv:
+    type: "csv"
+    path: "/data/exports/patients.csv"
+
+output:
+  directory: "./output"
+  formats:
+    - "xml"

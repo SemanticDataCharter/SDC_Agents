@@ -1,0 +1,6 @@
+test_id,patient_email,test_name,result,is_critical,collected_date,collected_time,request_uuid
+1,alice@example.com,CBC,98.6,true,2026-01-15,08:30:00,550e8400-e29b-41d4-a716-446655440000
+2,bob@example.com,BMP,120.5,false,2026-01-16,09:15:00,6ba7b810-9dad-11d1-80b4-00c04fd430c8
+3,carol@example.com,Lipid Panel,85.0,true,2026-01-17,10:00:00,f47ac10b-58cc-4372-a567-0e02b2c3d479
+4,dave@example.com,CBC,92.1,false,2026-01-18,11:45:00,a1b2c3d4-e5f6-7890-abcd-ef1234567890
+5,eve@example.com,HbA1c,6.5,false,2026-01-19,14:20:00,12345678-1234-1234-1234-123456789abc
