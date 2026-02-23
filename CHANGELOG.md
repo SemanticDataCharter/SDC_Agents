@@ -55,9 +55,9 @@ aligned with SDC Generation 4.
   - ADK BigQuery and Spanner integrations for GCP-native introspection
   - Chroma (local) and Vertex AI RAG Engine (GCP) as Knowledge Agent vector store backends
   - `OpenAPIToolset` for Catalog API (already documented)
-- **ADK Ecosystem Contributions** (Phase 4) — contribute two new integrations to `google/adk-docs`:
+- **ADK Ecosystem Contribution** (Phase 4) — contribute SPARQL integration to `google/adk-docs`:
   - `adk-sparql-tools` — SPARQL 1.1 / Fuseki / GraphDB (fills gap: no triplestore integrations in ADK ecosystem)
-  - `adk-neo4j-tools` — Neo4j / property graph (fills gap: no property graph DB integrations in ADK ecosystem)
+  - ~~`adk-neo4j-tools`~~ — superseded by MCP Toolbox for Databases (Neo4j + Dgraph support)
 - `introspect_mongodb` tool for Introspect Agent — MongoDB document schema analysis
 - MongoDB BSON to SDC4 type mapping table
 - `mongodb` and `bigquery` datasource type examples in configuration
@@ -123,9 +123,9 @@ aligned with SDC Generation 4.
 - PyPI packaging (`pip install sdc-agents`)
 - MCP export adapters (per-agent MCP server mode)
 - ADK Integration Page contribution to `google/adk-docs`
-- **ADK Ecosystem Contributions** to `google/adk-docs` integrations directory:
+- **ADK Ecosystem Contribution** to `google/adk-docs` integrations directory:
   - `adk-sparql-tools` — SPARQL 1.1 / Fuseki / GraphDB (no triplestore integration exists in ADK ecosystem)
-  - `adk-neo4j-tools` — Neo4j / property graph (no property graph DB integration exists in ADK ecosystem)
+  - ~~`adk-neo4j-tools`~~ — superseded by MCP Toolbox for Databases (Neo4j + Dgraph support)
 - Docker images (one per agent)
 - GitHub Actions CI/CD
 - Comprehensive documentation and example configurations
