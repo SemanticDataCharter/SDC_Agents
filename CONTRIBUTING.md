@@ -37,7 +37,7 @@ This project adheres to a Code of Conduct that all contributors are expected to 
 ### Contributions Requiring Discussion
 
 - **New agents**: Adding agents beyond the defined six requires architectural discussion
-- **Breaking changes**: Modifications to MCP tool schemas, configuration format, or file conventions
+- **Breaking changes**: Modifications to ADK tool signatures, configuration format, or file conventions
 - **Credential handling**: Any changes to how agents access or store credentials
 - **Network access changes**: Modifying which agents can make network calls
 
@@ -52,7 +52,7 @@ For these contributions, please open an issue first to discuss your proposal.
 - Python 3.11+
 - Git
 - A running SDCStudio instance (for integration tests)
-- Familiarity with the [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) specification
+- Familiarity with the [Google Agent Development Kit (ADK)](https://google.github.io/adk-docs/)
 
 ### Development Setup
 
@@ -171,19 +171,19 @@ sdc_agents/
 
 When contributing agent code, respect these invariants:
 
-1. **No agent imports another agent's code** — agents are independent MCP servers
-2. **Tool inputs come from MCP schema only** — never accept raw file paths or connection strings as tool input; use named references from configuration
+1. **No agent imports another agent's code** — each agent has its own `BaseToolset`
+2. **Tool inputs come from function signatures only** — never accept raw file paths or connection strings as tool input; use named references from configuration
 3. **Network access is explicit** — only the Catalog Agent and Validation Agent may make HTTP calls
 4. **File writes are scoped** — each agent writes only to its designated directory
 5. **Credentials come from config** — never hardcode or accept credentials in tool parameters
 
-### MCP Tool Schema
+### ADK Tool Definitions
 
-Each tool must have:
+Each tool is a Python `async def` function wrapped in `FunctionTool`. It must have:
 - A clear, descriptive name following the `{agent}_{action}` convention
-- Input parameters with types, descriptions, and required/optional flags
-- Output schema documenting the return structure
-- Side effects documented (file writes, API calls)
+- Type-hinted parameters with Google-style docstring descriptions (ADK derives schemas from these)
+- Return type annotation and documented return structure
+- Side effects documented in the docstring (file writes, API calls)
 
 ### Testing
 
@@ -219,7 +219,7 @@ All tool invocations must write to the structured audit log. Use the shared `aud
 
 1. All tests pass
 2. Security tests pass (no isolation violations)
-3. New tools have complete MCP schema definitions
+3. New tools have complete type hints and docstrings (ADK derives schemas from these)
 4. New functionality has tests
 5. Documentation updated if behavior changes
 6. No new credentials exposed in tool parameters
@@ -236,7 +236,7 @@ All tool invocations must write to the structured audit log. Use the shared `aud
 ### What Reviewers Look For
 
 1. **Security**: Does it maintain agent isolation boundaries?
-2. **Correctness**: Do tools produce valid outputs matching their MCP schema?
+2. **Correctness**: Do tools produce valid outputs matching their documented return types?
 3. **Tests**: Are unit and security tests comprehensive?
 4. **Documentation**: Are tool schemas and side effects documented?
 
