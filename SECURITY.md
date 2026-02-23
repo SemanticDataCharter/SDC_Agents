@@ -21,7 +21,7 @@ Only the current major version (4.x.x) aligned with SDC Generation 4 receives up
 
 ### Agent Isolation
 
-SDC Agents enforces strict isolation between its six agents. Each agent is a standalone MCP server with narrowly scoped capabilities:
+SDC Agents enforces strict isolation between its six agents. Each agent is an ADK `LlmAgent` with a narrowly scoped `BaseToolset`:
 
 | Agent | Network Access | Datasource Access | File Writes |
 |---|---|---|---|
@@ -73,7 +73,7 @@ The **Validation Agent** transmits XML instance documents to SDCStudio's VaaS AP
 Please report security vulnerabilities if you discover:
 
 - **Agent isolation bypass**: An agent accessing resources outside its defined scope
-- **Credential leakage**: Credentials appearing in logs, tool outputs, or MCP responses
+- **Credential leakage**: Credentials appearing in logs, tool outputs, or agent responses
 - **Input injection**: Tool inputs that can be manipulated to access unintended resources
 - **Audit log tampering**: Any way to modify or delete audit log entries
 - **Network policy violation**: An agent making unauthorized network calls
