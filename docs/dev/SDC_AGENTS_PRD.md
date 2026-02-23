@@ -4,7 +4,7 @@
 **Status**: Draft
 **Author**: Timothy W. Cook / Claude Code
 **Repository**: `SemanticDataCharter/SDC_Agents` (Apache 2.0 License)
-**Related**: SDCStudio `docs/dev/agentic-registry/SDC_Agents_PRD.md` (SDCStudio-side enhancement spec)
+**Related**: SDCStudio `docs/dev/agentic-registry/SDCStudio_API_Agents_PRD.md` (SDCStudio-side enhancement spec)
 
 ---
 
@@ -191,7 +191,7 @@ Only two agents make network calls. Their allowed endpoints are exhaustively lis
 
 Fine-grained XSD constraints (min_length, max_length, enumerations, patterns) are enforced by VaaS at validation time. The Mapping Agent only needs to know "this component is an XdString" or "this component is an XdTemporal" to suggest type-compatible mappings.
 
-> **Note**: Some of these endpoints require SDCStudio-side enhancements. See the [SDCStudio enhancement spec](https://github.com/Axius-SDC/SDCStudio/blob/main/docs/dev/agentic-registry/SDC_Agents_PRD.md) for implementation details on the skeleton endpoint, individual artifact serving, ontology endpoint, and catalog detail serializer changes.
+> **Note**: Some of these endpoints require SDCStudio-side enhancements. See the [SDCStudio enhancement spec](https://github.com/Axius-SDC/SDCStudio/blob/main/docs/dev/agentic-registry/SDCStudio_API_Agents_PRD.md) for implementation details on the skeleton endpoint, individual artifact serving, ontology endpoint, and catalog detail serializer changes.
 
 ### Validation Agent (token authentication)
 
@@ -868,7 +868,7 @@ Customers handling sensitive data should:
 - Unit tests for all tools
 - Security tests: verify agents cannot access out-of-scope resources
 
-**SDCStudio dependency**: Phase 1 requires SDCStudio to implement the skeleton endpoint, individual artifact serving (ttl/shacl/gql), ontology endpoint, and enhanced catalog detail serializer. See the [SDCStudio enhancement spec](https://github.com/Axius-SDC/SDCStudio/blob/main/docs/dev/agentic-registry/SDC_Agents_PRD.md).
+**SDCStudio dependency**: Phase 1 requires SDCStudio to implement the skeleton endpoint, individual artifact serving (ttl/shacl/gql), ontology endpoint, and enhanced catalog detail serializer. See the [SDCStudio enhancement spec](https://github.com/Axius-SDC/SDCStudio/blob/main/docs/dev/agentic-registry/SDCStudio_API_Agents_PRD.md).
 
 ### Phase 2: Generation and Validation
 
@@ -897,7 +897,7 @@ Customers handling sensitive data should:
 - Destination health checks
 - Integration tests with local Fuseki and Neo4j
 
-**SDCStudio dependency**: Phase 3 requires SDCStudio to implement `?package=true` on VaaS endpoints. See the [SDCStudio enhancement spec](https://github.com/Axius-SDC/SDCStudio/blob/main/docs/dev/agentic-registry/SDC_Agents_PRD.md).
+**SDCStudio dependency**: Phase 3 requires SDCStudio to implement `?package=true` on VaaS endpoints. See the [SDCStudio enhancement spec](https://github.com/Axius-SDC/SDCStudio/blob/main/docs/dev/agentic-registry/SDCStudio_API_Agents_PRD.md).
 
 ### Phase 4: Production Hardening
 
@@ -939,7 +939,7 @@ Customers handling sensitive data should:
 - **Schema evolution/migration** — operator selects the target `ct_id` explicitly
 - **GUI** — CLI and MCP tools only; a web UI is a possible community contribution
 - **Orchestration logic** — the suite provides agents; orchestration is the customer's choice
-- **VaaS artifact package generation** — server-side transformation is an SDCStudio enhancement (see [SDCStudio enhancement spec](https://github.com/Axius-SDC/SDCStudio/blob/main/docs/dev/agentic-registry/SDC_Agents_PRD.md))
+- **VaaS artifact package generation** — server-side transformation is an SDCStudio enhancement (see [SDCStudio enhancement spec](https://github.com/Axius-SDC/SDCStudio/blob/main/docs/dev/agentic-registry/SDCStudio_API_Agents_PRD.md))
 - **Destination-specific query/read-back** — the Distribution Agent writes to destinations but does not query them
 
 ---
