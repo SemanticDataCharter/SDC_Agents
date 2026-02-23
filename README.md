@@ -87,6 +87,7 @@ Copy `sdc-agents.example.yaml` to `sdc-agents.yaml` and fill in values:
 ```yaml
 sdcstudio:
   base_url: "https://sdcstudio.example.com"
+  api_key: "${SDC_API_KEY}"          # VaaS token (Validation Agent only)
 
 cache:
   root: ".sdc-cache"
@@ -108,6 +109,20 @@ output:
   directory: "./output"
   formats:
     - "xml"
+
+destinations:
+  triplestore:
+    type: fuseki
+    endpoint: "${FUSEKI_URL}"
+    auth: "${FUSEKI_AUTH}"
+  graph_database:
+    type: neo4j
+    endpoint: "${NEO4J_URL}"
+    database: "sdc4"
+  archive:
+    type: filesystem
+    path: "./archive/{ct_id}/{instance_id}/"
+    create_directories: true
 ```
 
 Environment variables use `${VAR}` syntax. Missing variables cause an immediate `KeyError` (fail closed).
@@ -119,6 +134,9 @@ from sdc_agents.common.config import load_config
 from sdc_agents.agents.catalog import create_catalog_agent
 from sdc_agents.agents.introspect import create_introspect_agent
 from sdc_agents.agents.mapping import create_mapping_agent
+from sdc_agents.agents.generator import create_generator_agent
+from sdc_agents.agents.validation import create_validation_agent
+from sdc_agents.agents.distribution import create_distribution_agent
 
 config = load_config("sdc-agents.yaml")
 
@@ -126,6 +144,9 @@ config = load_config("sdc-agents.yaml")
 catalog_agent = create_catalog_agent(config)
 introspect_agent = create_introspect_agent(config)
 mapping_agent = create_mapping_agent(config)
+generator_agent = create_generator_agent(config)
+validation_agent = create_validation_agent(config)
+distribution_agent = create_distribution_agent(config)
 ```
 
 Or construct agents directly with toolsets:
@@ -188,20 +209,33 @@ pytest tests/security/
 | Phase | Goal | Status |
 |---|---|---|
 | **Phase 1** | Catalog, Introspect, and Mapping agents with shared infra | **Complete** |
-| **Phase 2** | Generator and Validation agents, OpenAPIToolset integration | Planned |
-| **Phase 3** | VaaS artifact packages + Distribution Agent | Planned |
+| **Phase 2** | Generator and Validation agents, Introspect extensions | **Complete** |
+| **Phase 3** | Distribution Agent with multi-destination delivery | **Complete** |
 | **Phase 4** | Production hardening, PyPI, MCP export adapters, ADK Integration Page | Planned |
 | **Phase 5** | Knowledge Agent + Component Assembly Agent | Future |
 
-### Phase 1 — What's Implemented
+### What's Implemented (Phases 1–3)
 
-- **Common infrastructure**: Pydantic config with `${VAR}` substitution, append-only JSONL audit logger with credential redaction, cache manager
-- **CatalogToolset** (5 tools): `catalog_list_schemas`, `catalog_get_schema`, `catalog_download_schema_rdf`, `catalog_download_skeleton`, `catalog_download_ontologies` — httpx async, cache-first for immutable schemas
-- **IntrospectToolset** (2 tools): `introspect_sql` (SELECT-only enforcement), `introspect_csv` (type inference: boolean, integer, decimal, date, datetime, time, email, URL, UUID, string)
-- **MappingToolset** (3 tools): `mapping_suggest` (type compatibility + name similarity), `mapping_confirm`, `mapping_list`
-- **Agent factories**: `create_catalog_agent()`, `create_introspect_agent()`, `create_mapping_agent()` — each returns `LlmAgent` with scoped toolset
-- **68 tests, 92% coverage** — including security isolation tests (SQL write rejection, datasource name enforcement, no cross-scope tool leakage)
-- **Consumer-first**: all tests use `httpx.MockTransport` and `aiosqlite` — zero live SDCStudio dependency
+**Common infrastructure**:
+- Pydantic config with `${VAR}` substitution (fail closed), append-only JSONL audit logger with credential redaction, cache manager with path helpers
+
+**CatalogToolset** (5 tools): `catalog_list_schemas`, `catalog_get_schema`, `catalog_download_schema_rdf`, `catalog_download_skeleton`, `catalog_download_ontologies` — httpx async, cache-first for immutable schemas
+
+**IntrospectToolset** (4 tools): `introspect_sql` (SELECT-only enforcement), `introspect_csv` (type inference for 10 types), `introspect_json` (JSONPath extraction), `introspect_mongodb` (BSON-to-SDC4 type mapping)
+
+**MappingToolset** (3 tools): `mapping_suggest` (type compatibility + name similarity), `mapping_confirm`, `mapping_list`
+
+**GeneratorToolset** (3 tools): `generate_instance`, `generate_batch`, `generate_preview` — skeleton-based XML generation with placeholder substitution and optional element pruning
+
+**ValidationToolset** (3 tools): `validate_instance`, `sign_instance`, `validate_batch` — VaaS API with path confinement, token auth, artifact package (.pkg.zip) support
+
+**DistributionToolset** (5 tools): `inspect_package`, `list_destinations`, `distribute_package`, `distribute_batch`, `bootstrap_triplestore` — httpx-only connectors for SPARQL Graph Store, Neo4j HTTP, REST API, and filesystem
+
+**Agent factories**: `create_catalog_agent()`, `create_introspect_agent()`, `create_mapping_agent()`, `create_generator_agent()`, `create_validation_agent()`, `create_distribution_agent()`
+
+**143 tests, 82% coverage** — 6 toolsets with 23 disjoint tools, security isolation tests (SQL write rejection, datasource name enforcement, path confinement, credential redaction, no cross-scope tool leakage)
+
+**Consumer-first**: all tests use `httpx.MockTransport` — zero live SDCStudio, Fuseki, or Neo4j dependency
 
 ---
 
