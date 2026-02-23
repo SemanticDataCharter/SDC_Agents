@@ -250,9 +250,9 @@ class ValidationToolset(BaseToolset):
 
         # Find XML files, excluding recovered and signed variants
         xml_files = sorted(
-            p for p in dir_path.glob("*.xml")
-            if not p.name.endswith(".recovered.xml")
-            and not p.name.endswith(".signed.xml")
+            p
+            for p in dir_path.glob("*.xml")
+            if not p.name.endswith(".recovered.xml") and not p.name.endswith(".signed.xml")
         )
 
         results = []
@@ -260,13 +260,9 @@ class ValidationToolset(BaseToolset):
         for xml_file in xml_files:
             try:
                 if sign:
-                    r = await self.sign_instance(
-                        xml_path=str(xml_file), package=package
-                    )
+                    r = await self.sign_instance(xml_path=str(xml_file), package=package)
                 else:
-                    r = await self.validate_instance(
-                        xml_path=str(xml_file), package=package
-                    )
+                    r = await self.validate_instance(xml_path=str(xml_file), package=package)
                 entry = {
                     "xml_path": str(xml_file),
                     "valid": r.get("valid", False),
@@ -279,12 +275,14 @@ class ValidationToolset(BaseToolset):
                 if not r.get("valid", False):
                     failed += 1
             except Exception as exc:
-                results.append({
-                    "xml_path": str(xml_file),
-                    "valid": False,
-                    "signed": False,
-                    "errors": [{"error": str(exc)}],
-                })
+                results.append(
+                    {
+                        "xml_path": str(xml_file),
+                        "valid": False,
+                        "signed": False,
+                        "errors": [{"error": str(exc)}],
+                    }
+                )
                 failed += 1
 
         result = {

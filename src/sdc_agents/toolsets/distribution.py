@@ -178,7 +178,10 @@ class DistributionToolset(BaseToolset):
     ) -> bool:
         """Check if a named graph exists via SPARQL ASK query."""
         query = f"ASK WHERE {{ GRAPH <{graph_uri}> {{ ?s ?p ?o }} }}"
-        headers = {"Content-Type": "application/sparql-query", "Accept": "application/sparql-results+json"}
+        headers = {
+            "Content-Type": "application/sparql-query",
+            "Accept": "application/sparql-results+json",
+        }
         if auth:
             headers["Authorization"] = auth
         # SPARQL query endpoint is typically the dataset URL
@@ -228,12 +231,14 @@ class DistributionToolset(BaseToolset):
                 size_bytes = info.file_size
             except KeyError:
                 size_bytes = 0
-            artifacts.append({
-                "type": entry["type"],
-                "filename": filename,
-                "destination": entry.get("destination"),
-                "size_bytes": size_bytes,
-            })
+            artifacts.append(
+                {
+                    "type": entry["type"],
+                    "filename": filename,
+                    "destination": entry.get("destination"),
+                    "size_bytes": size_bytes,
+                }
+            )
         zf.close()
 
         result = {
@@ -335,12 +340,14 @@ class DistributionToolset(BaseToolset):
             artifact_type = entry["type"]
 
             if dest_name not in self._config.destinations:
-                per_artifact_results.append({
-                    "artifact": filename,
-                    "destination": dest_name,
-                    "status": "skipped",
-                    "reason": f"Destination '{dest_name}' not configured",
-                })
+                per_artifact_results.append(
+                    {
+                        "artifact": filename,
+                        "destination": dest_name,
+                        "status": "skipped",
+                        "reason": f"Destination '{dest_name}' not configured",
+                    }
+                )
                 continue
 
             dest = self._config.destinations[dest_name]
@@ -351,38 +358,54 @@ class DistributionToolset(BaseToolset):
                 if dest.type in ("fuseki", "graphdb"):
                     graph_uri = f"urn:sdc4:{ct_id}:{instance_id}:{artifact_type}"
                     await self._deliver_to_sparql(
-                        dest.endpoint, dest.auth, content, content_type, graph_uri,
+                        dest.endpoint,
+                        dest.auth,
+                        content,
+                        content_type,
+                        graph_uri,
                     )
                 elif dest.type == "neo4j":
                     await self._deliver_to_neo4j(
-                        dest.endpoint, dest.auth, dest.database or "neo4j",
+                        dest.endpoint,
+                        dest.auth,
+                        dest.database or "neo4j",
                         content.decode("utf-8"),
                     )
                 elif dest.type == "rest_api":
                     await self._deliver_to_rest(
-                        dest.endpoint, dest.method or "POST", dest.headers,
-                        content, content_type,
+                        dest.endpoint,
+                        dest.method or "POST",
+                        dest.headers,
+                        content,
+                        content_type,
                     )
                 elif dest.type == "filesystem":
                     self._deliver_to_filesystem(
                         dest.path or "./archive/{ct_id}/{instance_id}/",
-                        ct_id, instance_id, filename, content,
+                        ct_id,
+                        instance_id,
+                        filename,
+                        content,
                         dest.create_directories,
                     )
 
-                per_artifact_results.append({
-                    "artifact": filename,
-                    "destination": dest_name,
-                    "status": "delivered",
-                })
+                per_artifact_results.append(
+                    {
+                        "artifact": filename,
+                        "destination": dest_name,
+                        "status": "delivered",
+                    }
+                )
                 distributed += 1
             except Exception as exc:
-                per_artifact_results.append({
-                    "artifact": filename,
-                    "destination": dest_name,
-                    "status": "failed",
-                    "error": str(exc),
-                })
+                per_artifact_results.append(
+                    {
+                        "artifact": filename,
+                        "destination": dest_name,
+                        "status": "failed",
+                        "error": str(exc),
+                    }
+                )
 
         zf.close()
 
@@ -425,21 +448,23 @@ class DistributionToolset(BaseToolset):
         for pkg in packages:
             try:
                 r = await self.distribute_package(str(pkg))
-                results.append({
-                    "package_path": str(pkg),
-                    "artifacts_distributed": r["artifacts_distributed"],
-                    "errors": [
-                        e for e in r["results"] if e["status"] == "failed"
-                    ],
-                })
+                results.append(
+                    {
+                        "package_path": str(pkg),
+                        "artifacts_distributed": r["artifacts_distributed"],
+                        "errors": [e for e in r["results"] if e["status"] == "failed"],
+                    }
+                )
                 if any(e["status"] == "failed" for e in r["results"]):
                     failed += 1
             except Exception as exc:
-                results.append({
-                    "package_path": str(pkg),
-                    "artifacts_distributed": 0,
-                    "errors": [{"error": str(exc)}],
-                })
+                results.append(
+                    {
+                        "package_path": str(pkg),
+                        "artifacts_distributed": 0,
+                        "errors": [{"error": str(exc)}],
+                    }
+                )
                 failed += 1
 
         result = {
@@ -500,42 +525,58 @@ class DistributionToolset(BaseToolset):
                 graph_uri = f"urn:sdc4:ontology:{ont_file.stem}"
                 exists = await self._check_named_graph_exists(endpoint, auth, graph_uri)
                 if exists:
-                    graphs_loaded.append({
-                        "name": ont_file.name,
-                        "graph_uri": graph_uri,
-                        "status": "already_exists",
-                    })
+                    graphs_loaded.append(
+                        {
+                            "name": ont_file.name,
+                            "graph_uri": graph_uri,
+                            "status": "already_exists",
+                        }
+                    )
                 else:
                     content = ont_file.read_bytes()
                     await self._deliver_to_sparql(
-                        endpoint, auth, content, "application/rdf+xml", graph_uri,
+                        endpoint,
+                        auth,
+                        content,
+                        "application/rdf+xml",
+                        graph_uri,
                     )
-                    graphs_loaded.append({
-                        "name": ont_file.name,
-                        "graph_uri": graph_uri,
-                        "status": "loaded",
-                    })
+                    graphs_loaded.append(
+                        {
+                            "name": ont_file.name,
+                            "graph_uri": graph_uri,
+                            "status": "loaded",
+                        }
+                    )
 
             # Also load .ttl files
             for ttl_file in sorted(ontology_dir.glob("*.ttl")):
                 graph_uri = f"urn:sdc4:ontology:{ttl_file.stem}"
                 exists = await self._check_named_graph_exists(endpoint, auth, graph_uri)
                 if exists:
-                    graphs_loaded.append({
-                        "name": ttl_file.name,
-                        "graph_uri": graph_uri,
-                        "status": "already_exists",
-                    })
+                    graphs_loaded.append(
+                        {
+                            "name": ttl_file.name,
+                            "graph_uri": graph_uri,
+                            "status": "already_exists",
+                        }
+                    )
                 else:
                     content = ttl_file.read_bytes()
                     await self._deliver_to_sparql(
-                        endpoint, auth, content, "text/turtle", graph_uri,
+                        endpoint,
+                        auth,
+                        content,
+                        "text/turtle",
+                        graph_uri,
                     )
-                    graphs_loaded.append({
-                        "name": ttl_file.name,
-                        "graph_uri": graph_uri,
-                        "status": "loaded",
-                    })
+                    graphs_loaded.append(
+                        {
+                            "name": ttl_file.name,
+                            "graph_uri": graph_uri,
+                            "status": "loaded",
+                        }
+                    )
 
         # Load schema RDF if ct_id provided
         if ct_id:
@@ -544,21 +585,29 @@ class DistributionToolset(BaseToolset):
                 graph_uri = f"urn:sdc4:schema:{ct_id}"
                 exists = await self._check_named_graph_exists(endpoint, auth, graph_uri)
                 if exists:
-                    graphs_loaded.append({
-                        "name": schema_ttl.name,
-                        "graph_uri": graph_uri,
-                        "status": "already_exists",
-                    })
+                    graphs_loaded.append(
+                        {
+                            "name": schema_ttl.name,
+                            "graph_uri": graph_uri,
+                            "status": "already_exists",
+                        }
+                    )
                 else:
                     content = schema_ttl.read_bytes()
                     await self._deliver_to_sparql(
-                        endpoint, auth, content, "text/turtle", graph_uri,
+                        endpoint,
+                        auth,
+                        content,
+                        "text/turtle",
+                        graph_uri,
                     )
-                    graphs_loaded.append({
-                        "name": schema_ttl.name,
-                        "graph_uri": graph_uri,
-                        "status": "loaded",
-                    })
+                    graphs_loaded.append(
+                        {
+                            "name": schema_ttl.name,
+                            "graph_uri": graph_uri,
+                            "status": "loaded",
+                        }
+                    )
 
         result = {"graphs_loaded": graphs_loaded}
 

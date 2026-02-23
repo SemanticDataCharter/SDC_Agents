@@ -8,11 +8,9 @@ from pathlib import Path
 import httpx
 import pytest
 
-from sdc_agents.common.audit import AuditLogger
 from sdc_agents.common.config import SDCAgentsConfig
 from tests.fixtures.distribution_fixtures import (
     make_destination_configs,
-    make_manifest,
     make_package_zip,
 )
 
@@ -182,9 +180,11 @@ async def test_distribute_package_filesystem(dist_config, sample_package):
     await toolset.distribute_package(str(sample_package))
 
     # Check filesystem archive destination wrote the file
-    archive_base = Path(dist_config.destinations["archive"].path
-                        .replace("{ct_id}", "clxyz123abc")
-                        .replace("{instance_id}", "inst001"))
+    archive_base = Path(
+        dist_config.destinations["archive"]
+        .path.replace("{ct_id}", "clxyz123abc")
+        .replace("{instance_id}", "inst001")
+    )
     assert (archive_base / "instance.xml").exists()
 
 
@@ -316,8 +316,7 @@ async def test_bootstrap_requires_triplestore_config(dist_config):
 
     # Remove triplestore destinations
     dist_config.destinations = {
-        k: v for k, v in dist_config.destinations.items()
-        if v.type not in ("fuseki", "graphdb")
+        k: v for k, v in dist_config.destinations.items() if v.type not in ("fuseki", "graphdb")
     }
 
     client = httpx.AsyncClient(transport=_mock_transport())

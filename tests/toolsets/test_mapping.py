@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from sdc_agents.common.config import SDCAgentsConfig
-from sdc_agents.toolsets.mapping import MappingToolset, TYPE_COMPATIBILITY
+from sdc_agents.toolsets.mapping import TYPE_COMPATIBILITY, MappingToolset
 from tests.fixtures.catalog_responses import make_schema_detail_response
 
 

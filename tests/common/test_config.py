@@ -32,9 +32,7 @@ def test_datasources_parsed(sample_config_path: Path):
 def test_env_var_substitution(tmp_path: Path):
     """${VAR} placeholders are substituted from environment."""
     config_file = tmp_path / "test.yaml"
-    config_file.write_text(
-        'sdcstudio:\n  base_url: "https://${TEST_SDC_HOST}"\n'
-    )
+    config_file.write_text('sdcstudio:\n  base_url: "https://${TEST_SDC_HOST}"\n')
     os.environ["TEST_SDC_HOST"] = "my-server.example.com"
     try:
         config = load_config(config_file)
@@ -46,9 +44,7 @@ def test_env_var_substitution(tmp_path: Path):
 def test_missing_env_var_raises(tmp_path: Path):
     """Missing environment variable causes KeyError (fail closed)."""
     config_file = tmp_path / "test.yaml"
-    config_file.write_text(
-        'sdcstudio:\n  base_url: "${NONEXISTENT_SDC_VAR}"\n'
-    )
+    config_file.write_text('sdcstudio:\n  base_url: "${NONEXISTENT_SDC_VAR}"\n')
     # Ensure it's not set
     os.environ.pop("NONEXISTENT_SDC_VAR", None)
     with pytest.raises(KeyError, match="NONEXISTENT_SDC_VAR"):
@@ -65,9 +61,7 @@ def test_defaults_applied():
 
 def test_sdcstudio_api_key():
     """SDCStudio config supports optional api_key."""
-    config = SDCAgentsConfig(
-        sdcstudio={"base_url": "https://test.local", "api_key": "my-token"}
-    )
+    config = SDCAgentsConfig(sdcstudio={"base_url": "https://test.local", "api_key": "my-token"})
     assert config.sdcstudio.api_key == "my-token"
 
 

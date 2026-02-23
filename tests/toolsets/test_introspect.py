@@ -92,12 +92,10 @@ async def test_sql_select(introspect_toolset: IntrospectToolset):
     # Set up test table
     engine = create_async_engine("sqlite+aiosqlite://")
     async with engine.begin() as conn:
-        await conn.execute(sqlalchemy.text(
-            "CREATE TABLE test_table (id INTEGER, name TEXT)"
-        ))
-        await conn.execute(sqlalchemy.text(
-            "INSERT INTO test_table VALUES (1, 'Alice'), (2, 'Bob')"
-        ))
+        await conn.execute(sqlalchemy.text("CREATE TABLE test_table (id INTEGER, name TEXT)"))
+        await conn.execute(
+            sqlalchemy.text("INSERT INTO test_table VALUES (1, 'Alice'), (2, 'Bob')")
+        )
     await engine.dispose()
 
     # The toolset creates its own engine, but with in-memory SQLite
@@ -118,12 +116,12 @@ async def test_sql_select_with_file(introspect_config: SDCAgentsConfig, tmp_path
     # Create and populate
     engine = create_async_engine(conn_str)
     async with engine.begin() as conn:
-        await conn.execute(sqlalchemy.text(
-            "CREATE TABLE lab_results (id INTEGER, test_name TEXT, value REAL)"
-        ))
-        await conn.execute(sqlalchemy.text(
-            "INSERT INTO lab_results VALUES (1, 'CBC', 98.6), (2, 'BMP', 120.5)"
-        ))
+        await conn.execute(
+            sqlalchemy.text("CREATE TABLE lab_results (id INTEGER, test_name TEXT, value REAL)")
+        )
+        await conn.execute(
+            sqlalchemy.text("INSERT INTO lab_results VALUES (1, 'CBC', 98.6), (2, 'BMP', 120.5)")
+        )
     await engine.dispose()
 
     # Update config to point to file DB
@@ -141,19 +139,13 @@ async def test_sql_rejects_write(introspect_toolset: IntrospectToolset):
         await introspect_toolset.introspect_sql("test_db", "DROP TABLE users")
 
     with pytest.raises(PermissionError):
-        await introspect_toolset.introspect_sql(
-            "test_db", "INSERT INTO t VALUES (1)"
-        )
+        await introspect_toolset.introspect_sql("test_db", "INSERT INTO t VALUES (1)")
 
     with pytest.raises(PermissionError):
-        await introspect_toolset.introspect_sql(
-            "test_db", "UPDATE t SET x = 1"
-        )
+        await introspect_toolset.introspect_sql("test_db", "UPDATE t SET x = 1")
 
     with pytest.raises(PermissionError):
-        await introspect_toolset.introspect_sql(
-            "test_db", "DELETE FROM t WHERE id = 1"
-        )
+        await introspect_toolset.introspect_sql("test_db", "DELETE FROM t WHERE id = 1")
 
 
 async def test_sql_wrong_datasource_type(introspect_toolset: IntrospectToolset):
@@ -308,10 +300,14 @@ async def test_json_nested_objects(tmp_path: Path):
     import json as json_mod
 
     json_file = tmp_path / "nested.json"
-    json_file.write_text(json_mod.dumps([
-        {"name": "Alice", "address": {"city": "NYC", "zip": "10001"}},
-        {"name": "Bob", "address": {"city": "LA", "zip": "90001"}},
-    ]))
+    json_file.write_text(
+        json_mod.dumps(
+            [
+                {"name": "Alice", "address": {"city": "NYC", "zip": "10001"}},
+                {"name": "Bob", "address": {"city": "LA", "zip": "90001"}},
+            ]
+        )
+    )
 
     config = SDCAgentsConfig(
         cache={"root": str(tmp_path / ".sdc-cache")},
@@ -331,10 +327,14 @@ async def test_json_arrays(tmp_path: Path):
     import json as json_mod
 
     json_file = tmp_path / "arrays.json"
-    json_file.write_text(json_mod.dumps([
-        {"name": "Alice", "scores": [90, 85, 92]},
-        {"name": "Bob", "scores": [78, 88]},
-    ]))
+    json_file.write_text(
+        json_mod.dumps(
+            [
+                {"name": "Alice", "scores": [90, 85, 92]},
+                {"name": "Bob", "scores": [78, 88]},
+            ]
+        )
+    )
 
     config = SDCAgentsConfig(
         cache={"root": str(tmp_path / ".sdc-cache")},
