@@ -119,6 +119,15 @@ aligned with SDC Generation 4.
 - 143 tests (28 new), 2 skipped. Security: 6 toolsets disjoint (5+4+3+3+3+5 = 23 total tools), Distribution path confinement, destination credential redaction
 - Implementation: regular `FunctionTool` for batch (not `LongRunningFunctionTool`), httpx `MockTransport` for all connectors
 
+### In Progress — Phase 4 (Partial): CLI + PyPI Packaging
+- **CLI**: `sdc-agents` command with 4 subcommands:
+  - `sdc-agents serve --mcp <agent>` — start any agent toolset as an MCP stdio server
+  - `sdc-agents audit show` — inspect structured audit log with `--agent`, `--tool`, `--last`, `--limit` filters
+  - `sdc-agents info` — display config summary, agent inventory (6 agents, 23 tools), datasources, and destinations
+  - `sdc-agents validate-config` — validate YAML config and report Pydantic errors
+- **PyPI metadata**: `[project.scripts]` entry point, `[project.urls]` (Repository, Documentation, Issues, Changelog), keywords, updated classifiers (removed stale Django, added Python 3.13, Typed)
+- 12 new CLI tests using `click.testing.CliRunner` (in-process, no subprocess)
+
 ### Planned — Phase 4: Production Hardening
 - PyPI packaging (`pip install sdc-agents`)
 - MCP export adapters (per-agent MCP server mode)
