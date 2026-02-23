@@ -23,7 +23,7 @@ A single monolithic agent with broad access to datasources, file systems, and re
 | Agent | Scope | Can Access | Cannot Access |
 |---|---|---|---|
 | **Catalog Agent** | Schema discovery + artifacts | SDCStudio Catalog API (read-only, no auth) | Datasources, file system, VaaS API |
-| **Introspect Agent** | Datasource structure extraction | Customer datasources (read-only) | SDCStudio APIs, file system writes |
+| **Introspect Agent** | Datasource structure extraction | Customer datasources (read-only): SQL (30+ via MCP Toolbox), MongoDB, CSV, JSON | SDCStudio APIs, file system writes |
 | **Mapping Agent** | Column-to-component mapping | Cached schemas + introspection results | Datasources directly, SDCStudio APIs |
 | **Generator Agent** | XML instance generation | Mapping configs, datasource (read-only) | SDCStudio APIs, schema downloads |
 | **Validation Agent** | Instance validation and signing | VaaS API (token auth), local XML files | Datasources, schema management |
@@ -76,7 +76,7 @@ Each SDC Agent is an ADK `LlmAgent` with a scoped `BaseToolset`. The `BaseToolse
 │  │  Introspect │   │   Mapping   │   │     Generator Agent      │      │
 │  │  LlmAgent   │   │  LlmAgent   │   │     LlmAgent             │      │
 │  │             │   │             │   │                          │      │
-│  │  toolset: 3 │   │  toolset: 3 │   │  reads: mapping configs  │      │
+│  │  toolset: 4 │   │  toolset: 3 │   │  reads: mapping configs  │      │
 │  │  network: ✗ │   │  network: ✗ │   │  reads: datasource       │      │
 │  │  writes: ✗  │   │  writes: ✓  │   │  writes: XML files       │      │
 │  └──────┬──────┘   │  (configs   │   │  network: ✗              │      │
@@ -569,11 +569,21 @@ The VaaS API extracts the `ct_id` from the root element name — no additional m
 
 **File access**: Read from datasource paths (CSV, JSON). Write to `.sdc-cache/introspections/` only.
 
+#### Connector Layer: MCP Toolbox for Databases
+
+The Introspect Agent uses Google's **[MCP Toolbox for Databases](https://google.github.io/adk-docs/integrations/mcp-toolbox-for-databases/)** as its connector layer for SQL datasources. MCP Toolbox provides production-hardened drivers for 30+ data sources (PostgreSQL, MySQL, SQLite, MSSQL, Oracle, Cloud SQL, AlloyDB, Spanner, BigQuery) with connection pooling and IAM authentication support.
+
+The `introspect_sql` tool is a thin wrapper that delegates connection management to MCP Toolbox and adds `.sdc-cache/` persistence on top. This avoids building custom SQLAlchemy connectors for each database type and gives customers immediate access to the full range of supported databases.
+
+For **BigQuery** and **Spanner**, customers can alternatively use the dedicated ADK integrations ([BigQuery Tools](https://google.github.io/adk-docs/integrations/bigquery/), [Spanner Tools](https://google.github.io/adk-docs/integrations/spanner/)) for GCP-native authentication and query optimization. The `introspect_sql` tool auto-detects BigQuery and Spanner datasource types from config and delegates to the appropriate integration.
+
+For **MongoDB**, the Introspect Agent uses the dedicated [ADK MongoDB integration](https://google.github.io/adk-docs/integrations/mongodb/) for schema analysis and document sampling via a separate `introspect_mongodb` tool.
+
 #### Tools
 
 ##### `introspect_sql`
 
-Examine a SQL datasource and extract column structure.
+Examine a SQL datasource and extract column structure. Uses MCP Toolbox for Databases as the connector layer, with automatic delegation to dedicated BigQuery or Spanner integrations when those datasource types are configured.
 
 ```python
 async def introspect_sql(
@@ -581,6 +591,9 @@ async def introspect_sql(
     query: str | None = None,
 ) -> dict:
     """Examine a SQL datasource and extract column structure.
+
+    Uses MCP Toolbox for Databases for connection management (30+ databases).
+    BigQuery and Spanner datasources auto-delegate to dedicated ADK integrations.
 
     Args:
         datasource: Named datasource from config (not a raw connection string).
@@ -649,6 +662,40 @@ async def introspect_json(
 
     Constraints:
         File path from config, not from tool input. Read-only file access.
+    """
+```
+
+##### `introspect_mongodb`
+
+Examine a MongoDB collection and extract document structure. Uses the ADK MongoDB integration for schema analysis and document sampling.
+
+```python
+async def introspect_mongodb(
+    datasource: str,
+    collection: str | None = None,
+    sample_size: int = 100,
+) -> dict:
+    """Examine a MongoDB collection and extract document structure.
+
+    Uses the ADK MongoDB integration for connection management and
+    document sampling. Analyzes document structure across the sample
+    to infer a consistent schema.
+
+    Args:
+        datasource: Named datasource from config (not a raw connection string).
+        collection: Override collection name. Defaults to datasource's configured collection.
+        sample_size: Number of documents to sample for schema inference.
+
+    Returns:
+        Dict with keys: datasource, collection, fields (list of {name, bson_type,
+        nullable, sample_values, unique_count, nested_fields}), document_count.
+
+    Side Effect:
+        Writes result to .sdc-cache/introspections/{datasource}.json.
+
+    Constraints:
+        Read-only access (find only, no insert/update/delete).
+        Connection string from config, not from tool input.
     """
 ```
 
@@ -1150,6 +1197,21 @@ These tables drive the Mapping Agent's `mapping_suggest` tool. They map source d
 | `object` (nested) | Cluster | Recursively maps to component group |
 | `null` | (nullable flag) | Marks component as not required |
 
+### MongoDB BSON to SDC4
+
+| BSON Type | SDC4 Component | Notes |
+|---|---|---|
+| `string` | XdString | Length constraints from sample analysis |
+| `bool` | XdBoolean | `trues: ["true"]`, `falses: ["false"]` |
+| `int` / `long` | XdCount | Requires units mapping |
+| `double` / `decimal128` | XdQuantity | `fraction_digits` from sample analysis; requires units |
+| `date` | XdTemporal | `allow_datetime = True` |
+| `objectId` | XdString | `str_fmt` set to ObjectId pattern |
+| `array` (homogeneous) | Xd*List | List type matches element type |
+| `object` (embedded) | Cluster | Recursively maps to component group |
+| `null` | (nullable flag) | Marks component as not required |
+| `binData` | XdFile | `content_mode = embed` |
+
 ### CSV to SDC4
 
 CSV columns are untyped strings. Types are inferred from sample values:
@@ -1194,11 +1256,25 @@ audit:
 
 # Datasource definitions (used by Introspect Agent and Generator Agent)
 # NOTE: Connection strings are ONLY read from this file, never from tool inputs.
+# SQL datasources use MCP Toolbox for Databases (30+ databases supported).
+# BigQuery and Spanner auto-delegate to dedicated ADK integrations.
 datasources:
   patient_db:
-    type: sql
+    type: sql                         # Uses MCP Toolbox for Databases
     connection: "${PATIENT_DB_URL}"   # env var — never stored in plaintext
     default_query: "SELECT * FROM patients LIMIT 100"
+
+  analytics_warehouse:
+    type: bigquery                    # Uses dedicated ADK BigQuery integration
+    project: "${GCP_PROJECT_ID}"
+    dataset: "clinical_data"
+    default_query: "SELECT * FROM patients LIMIT 100"
+
+  document_store:
+    type: mongodb                     # Uses dedicated ADK MongoDB integration
+    connection: "${MONGO_URL}"
+    database: "patient_records"
+    collection: "encounters"
 
   lab_results:
     type: csv
@@ -1213,23 +1289,33 @@ datasources:
 
 # Knowledge resources (used by Knowledge Agent, Phase 5)
 # Customer-side contextual resources for semantic understanding.
-# NOTE: Read-only access, no network. Knowledge stays local.
+# NOTE: Read-only access to source files. Knowledge index stays local (or managed via GCP).
 knowledge:
-  data_dictionary:
-    type: csv
-    path: "./docs/data_dictionary.csv"
+  # Vector store backend for the knowledge index
+  # Options: "chroma" (local, default), "vertex-ai-rag" (GCP managed),
+  #          "qdrant", "pinecone" (requires API key)
+  vector_store: "chroma"
+  vector_store_path: ".sdc-cache/knowledge/"  # For local backends (chroma, qdrant)
+  # vertex_ai_project: "${GCP_PROJECT_ID}"    # For vertex-ai-rag backend
+  # vertex_ai_corpus: "sdc-knowledge"         # For vertex-ai-rag backend
 
-  policies:
-    type: pdf
-    path: "./docs/data_governance_policy.pdf"
+  # Customer-side contextual resources to ingest
+  sources:
+    data_dictionary:
+      type: csv
+      path: "./docs/data_dictionary.csv"
 
-  domain_glossary:
-    type: json
-    path: "./docs/glossary.json"
+    policies:
+      type: pdf
+      path: "./docs/data_governance_policy.pdf"
 
-  existing_ontology:
-    type: ttl
-    path: "./docs/customer_vocab.ttl"
+    domain_glossary:
+      type: json
+      path: "./docs/glossary.json"
+
+    existing_ontology:
+      type: ttl
+      path: "./docs/customer_vocab.ttl"
 
 # Output settings (used by Generator Agent and Validation Agent)
 output:
@@ -1530,7 +1616,7 @@ This means SDC_Agents Phases 1–4 are developed to completion before SDCStudio 
 - Project scaffolding (Python package, per-agent ADK `BaseToolset` + `LlmAgent` definitions)
 - Shared `AuditLogger` library (append-only JSON lines to `.sdc-cache/audit.jsonl`)
 - **Catalog Agent**: `CatalogToolset` with `catalog_list_schemas`, `catalog_get_schema`, `catalog_download_skeleton`, `catalog_download_schema_rdf`, `catalog_download_ontologies`
-- **Introspect Agent**: `IntrospectToolset` with `introspect_sql` (SQLAlchemy-based), `introspect_csv`
+- **Introspect Agent**: `IntrospectToolset` with `introspect_sql` (via MCP Toolbox for Databases — 30+ data sources), `introspect_csv`
 - **Mapping Agent**: `MappingToolset` with `mapping_suggest`, `mapping_confirm`, `mapping_list`
 - YAML configuration loader with env var substitution
 - Mock SDCStudio API responses for all Catalog endpoints (fixtures for testing without a live SDCStudio instance)
@@ -1546,7 +1632,8 @@ This means SDC_Agents Phases 1–4 are developed to completion before SDCStudio 
 **Deliverables**:
 - **Generator Agent**: `GeneratorToolset` with `generate_instance`, `generate_batch`, `generate_preview`
 - **Validation Agent**: `ValidationToolset` with `validate_instance`, `sign_instance`, `validate_batch`
-- `introspect_json` tool added to `IntrospectToolset`
+- `introspect_json` and `introspect_mongodb` tools added to `IntrospectToolset`
+- MongoDB introspection via ADK MongoDB integration; BigQuery/Spanner introspection via dedicated ADK integrations
 - `OpenAPIToolset` integration for Catalog API (auto-generated bindings from SDCStudio's drf-yasg spec)
 - Mock VaaS API responses for validation and signing (fixtures including artifact packages)
 - Improved type inference using string format inference patterns
@@ -1559,8 +1646,8 @@ This means SDC_Agents Phases 1–4 are developed to completion before SDCStudio 
 
 **Deliverables**:
 - **Distribution Agent**: `DistributionToolset` with `distribute_package`, `distribute_batch`, `list_destinations`, `inspect_package`, `bootstrap_triplestore`
-- Fuseki/GraphDB triplestore connector (named graph upload via SPARQL Graph Store Protocol)
-- Neo4j/Memgraph graph DB connector (GQL CREATE statement execution)
+- Fuseki/GraphDB triplestore connector (named graph upload via SPARQL Graph Store Protocol) — built as a generic, reusable module for Phase 4 ADK ecosystem contribution
+- Neo4j/Memgraph graph DB connector (GQL/Cypher execution) — built as a generic, reusable module for Phase 4 ADK ecosystem contribution
 - REST API connector (POST/PUT JSON payloads)
 - Filesystem connector (write artifacts to directory structure)
 - Triplestore bootstrap: load SDC4 ontologies and schema-level RDF into named graphs
@@ -1579,6 +1666,9 @@ This means SDC_Agents Phases 1–4 are developed to completion before SDCStudio 
 - PyPI packaging (`pip install sdc-agents`)
 - MCP export adapters (per-agent MCP server mode via `adk_to_mcp_tool_type`)
 - ADK Integration Page contribution (`docs/integrations/sdc-agents.md` to `google/adk-docs` repo — see [ADK Integration Page](#adk-integration-page-phase-4))
+- **ADK Ecosystem Contributions** — generalize Phase 3 connectors and contribute to `google/adk-docs` integrations directory (see [ADK Ecosystem Contributions](#adk-ecosystem-contributions-phase-4)):
+  - `adk-sparql-tools` — SPARQL 1.1 / Fuseki / GraphDB integration (fills a gap: no triplestore integrations exist in the current ADK ecosystem)
+  - `adk-neo4j-tools` — Neo4j / property graph integration (fills a gap: no property graph DB integrations exist)
 - Docker images (one per agent, for containerized deployment with network isolation)
 - GitHub Actions CI/CD (lint, test, security scan, publish)
 - Example configurations for common use cases (healthcare, IoT, financial)
@@ -1593,7 +1683,10 @@ This means SDC_Agents Phases 1–4 are developed to completion before SDCStudio 
 
 Phase 5 adds two agents:
 
-- **Knowledge Agent**: Ingests customer-side contextual resources (data dictionaries, PDFs, metadata repositories, existing ontologies) into a local knowledge index (`.sdc-cache/knowledge/`). Provides semantic context to the Component Assembly Agent for better component matching, Cluster naming, and contextual component selection. Read-only, no network access.
+- **Knowledge Agent**: Ingests customer-side contextual resources (data dictionaries, PDFs, metadata repositories, existing ontologies) into a semantic knowledge index. Provides context to the Component Assembly Agent for better component matching, Cluster naming, and contextual component selection. Read-only, no network access (for local deployments). The knowledge index backend is configurable:
+  - **Local**: [Chroma](https://google.github.io/adk-docs/integrations/chroma/) vector store in `.sdc-cache/knowledge/` — zero infrastructure, embedded in the agent process
+  - **GCP**: [Vertex AI RAG Engine](https://google.github.io/adk-docs/integrations/vertex-ai-rag-engine/) — managed retrieval with Google Cloud auth, for customers already on GCP
+  - Other ADK-compatible vector stores ([Qdrant](https://google.github.io/adk-docs/integrations/qdrant/), [Pinecone](https://google.github.io/adk-docs/integrations/pinecone/)) can be substituted via configuration
 
 - **Component Assembly Agent**: Analyzes data sources (using Introspect Agent results + Knowledge Agent context), discovers matching published components from the SDCStudio catalog, proposes arbitrarily deep Cluster hierarchies reflecting the data source structure, selects contextual components (Audit, Attestation, Party, etc.) from SDCStudio's Default project library, and calls the SDCStudio assembly API. The output is a **fully published, generated data model** — immediately available in the catalog for Phases 1–4 consumption. No human-in-the-loop.
 
@@ -1627,12 +1720,61 @@ Phase 4 includes contributing an integration page to the `google/adk-docs` repos
 
 ---
 
+## ADK Ecosystem Contributions (Phase 4)
+
+Phase 3 builds triplestore and property graph connectors for the Distribution Agent. Phase 4 generalizes these into standalone ADK integrations and contributes them to the `google/adk-docs` integrations directory. **No triplestore or property graph database integrations currently exist** in the ADK ecosystem (52 integrations as of February 2026) — these fill a real gap.
+
+### `adk-sparql-tools` — SPARQL / Triplestore Integration
+
+| Field | Value |
+|---|---|
+| **Supported backends** | Apache Jena Fuseki, Ontotext GraphDB, Stardog, Blazegraph, any SPARQL 1.1 endpoint |
+| **Tools** | `sparql_query` (SELECT/CONSTRUCT/ASK), `sparql_update` (INSERT/DELETE), `upload_named_graph` (Graph Store Protocol), `list_named_graphs`, `describe_resource` |
+| **Auth** | Basic auth, Bearer token, or no auth (configurable) |
+| **Value to ADK community** | Enables any ADK agent to work with RDF/linked data — relevant to knowledge graphs, ontology management, semantic search, and any domain using W3C standards |
+
+### `adk-neo4j-tools` — Neo4j / Property Graph Integration
+
+| Field | Value |
+|---|---|
+| **Supported backends** | Neo4j, Memgraph, Amazon Neptune (OpenCypher) |
+| **Tools** | `cypher_query` (read), `cypher_write` (create/update), `get_schema` (labels, relationship types, property keys), `get_node`, `find_paths` |
+| **Auth** | Bolt protocol auth (username/password), or IAM (Neptune) |
+| **Value to ADK community** | Enables any ADK agent to work with property graphs — relevant to fraud detection, recommendation engines, network analysis, and social graph applications |
+
+### Contribution Strategy
+
+1. **Phase 3**: Build connectors for SDC Distribution Agent use case
+2. **Phase 4**: Extract generic modules, write integration docs and tests, submit PRs to `google/adk-docs`
+3. **Same CLA** — the Google CLA signing for the SDC Agents integration page covers these contributions
+4. **Three PRs total**: SDC Agents integration page + SPARQL integration + Neo4j integration
+
+This establishes SDC as a credible ADK ecosystem contributor — the project that brought graph and semantic web infrastructure into the ADK integrations directory.
+
+---
+
+## ADK Ecosystem Integrations Used
+
+SDC Agents leverages existing ADK ecosystem integrations rather than building custom connectors. This table lists the integrations referenced across the agent specifications:
+
+| ADK Integration | Used By | Purpose |
+|---|---|---|
+| [MCP Toolbox for Databases](https://google.github.io/adk-docs/integrations/mcp-toolbox-for-databases/) | Introspect Agent | SQL connector layer — 30+ databases (PostgreSQL, MySQL, SQLite, MSSQL, Oracle, Cloud SQL, AlloyDB, Spanner, BigQuery) |
+| [BigQuery Tools](https://google.github.io/adk-docs/integrations/bigquery/) | Introspect Agent | GCP-native BigQuery introspection with IAM auth |
+| [Spanner Tools](https://google.github.io/adk-docs/integrations/spanner/) | Introspect Agent | GCP-native Spanner introspection with IAM auth |
+| [MongoDB](https://google.github.io/adk-docs/integrations/mongodb/) | Introspect Agent | Document database schema analysis and sampling |
+| [OpenAPIToolset](https://google.github.io/adk-docs/tools/openapi-tools/) | Catalog Agent | Auto-generated API bindings from SDCStudio's drf-yasg OpenAPI spec |
+| [Chroma](https://google.github.io/adk-docs/integrations/chroma/) | Knowledge Agent *(Phase 5)* | Local vector store for customer knowledge index |
+| [Vertex AI RAG Engine](https://google.github.io/adk-docs/integrations/vertex-ai-rag-engine/) | Knowledge Agent *(Phase 5)* | Managed retrieval for GCP-native deployments |
+
+---
+
 ## Scope Boundaries
 
 ### In Scope
 
 - Discovering and downloading published SDC4 schemas (Catalog Agent)
-- Read-only introspection of SQL, JSON, and CSV datasources (Introspect Agent)
+- Read-only introspection of SQL (30+ databases via MCP Toolbox), MongoDB, BigQuery, Spanner, JSON, and CSV datasources (Introspect Agent)
 - Suggesting and persisting column-to-component mappings (Mapping Agent)
 - Generating SDC4 XML instance documents (Generator Agent)
 - Validating, signing, and requesting artifact packages via VaaS (Validation Agent)

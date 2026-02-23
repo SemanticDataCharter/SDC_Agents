@@ -49,13 +49,27 @@ aligned with SDC Generation 4.
 - Assembly API key in credential isolation model
 - Open questions O7–O10 (knowledge scope, assembly failures, matching intelligence, multi-source assembly)
 - Success criterion 10: autonomous assembly pipeline end-to-end
+- **ADK Ecosystem Integration alignment** — leverage existing ADK integrations instead of custom connectors:
+  - MCP Toolbox for Databases as Introspect Agent SQL connector layer (30+ data sources)
+  - ADK MongoDB integration for `introspect_mongodb` tool
+  - ADK BigQuery and Spanner integrations for GCP-native introspection
+  - Chroma (local) and Vertex AI RAG Engine (GCP) as Knowledge Agent vector store backends
+  - `OpenAPIToolset` for Catalog API (already documented)
+- **ADK Ecosystem Contributions** (Phase 4) — contribute two new integrations to `google/adk-docs`:
+  - `adk-sparql-tools` — SPARQL 1.1 / Fuseki / GraphDB (fills gap: no triplestore integrations in ADK ecosystem)
+  - `adk-neo4j-tools` — Neo4j / property graph (fills gap: no property graph DB integrations in ADK ecosystem)
+- `introspect_mongodb` tool for Introspect Agent — MongoDB document schema analysis
+- MongoDB BSON to SDC4 type mapping table
+- `mongodb` and `bigquery` datasource type examples in configuration
+- Knowledge Agent vector store backend configuration (chroma, vertex-ai-rag, qdrant, pinecone)
+- ADK Ecosystem Integrations Used reference table in PRD
 
 ### Planned — Phase 1: Core Agents
 - Project scaffolding (Python package, per-agent ADK `BaseToolset` + `LlmAgent` definitions)
 - Shared `AuditLogger` library (append-only JSON lines)
 - YAML configuration loader with env var substitution
 - **Catalog Agent**: `CatalogToolset` with `catalog_list_schemas`, `catalog_get_schema`, `catalog_download_skeleton`, `catalog_download_schema_rdf`, `catalog_download_ontologies`
-- **Introspect Agent**: `IntrospectToolset` with `introspect_sql`, `introspect_csv`
+- **Introspect Agent**: `IntrospectToolset` with `introspect_sql` (via MCP Toolbox for Databases), `introspect_csv`
 - **Mapping Agent**: `MappingToolset` with `mapping_suggest`, `mapping_confirm`, `mapping_list`
 - Unit tests for all tools
 - Security tests: verify agents cannot access out-of-scope resources
@@ -63,15 +77,16 @@ aligned with SDC Generation 4.
 ### Planned — Phase 2: Generation and Validation
 - **Generator Agent**: `GeneratorToolset` with `generate_instance`, `generate_batch`, `generate_preview`
 - **Validation Agent**: `ValidationToolset` with `validate_instance`, `sign_instance`, `validate_batch`
-- `introspect_json` tool for `IntrospectToolset`
+- `introspect_json` and `introspect_mongodb` tools for `IntrospectToolset`
+- MongoDB introspection via ADK MongoDB integration; BigQuery/Spanner via dedicated ADK integrations
 - `OpenAPIToolset` integration for Catalog API
 - CLI wrapper for non-ADK usage
 - Integration tests against SDCStudio staging environment
 
 ### Planned — Phase 3: Artifact Package and Distribution
 - **Distribution Agent**: `DistributionToolset` with `distribute_package`, `distribute_batch`, `list_destinations`, `inspect_package`, `bootstrap_triplestore`
-- Fuseki/GraphDB triplestore connector
-- Neo4j/Memgraph graph DB connector
+- Fuseki/GraphDB triplestore connector (built as generic module for Phase 4 ADK ecosystem contribution)
+- Neo4j/Memgraph graph DB connector (built as generic module for Phase 4 ADK ecosystem contribution)
 - REST API and filesystem connectors
 - Destination health checks
 
@@ -79,12 +94,15 @@ aligned with SDC Generation 4.
 - PyPI packaging (`pip install sdc-agents`)
 - MCP export adapters (per-agent MCP server mode)
 - ADK Integration Page contribution to `google/adk-docs`
+- **ADK Ecosystem Contributions** to `google/adk-docs` integrations directory:
+  - `adk-sparql-tools` — SPARQL 1.1 / Fuseki / GraphDB (no triplestore integration exists in ADK ecosystem)
+  - `adk-neo4j-tools` — Neo4j / property graph (no property graph DB integration exists in ADK ecosystem)
 - Docker images (one per agent)
 - GitHub Actions CI/CD
 - Comprehensive documentation and example configurations
 
 ### Planned — Phase 5: Component Assembly and Knowledge (Future)
-- **Knowledge Agent**: `KnowledgeToolset` — ingest data dictionaries, PDFs, glossaries, ontologies into local knowledge index
+- **Knowledge Agent**: `KnowledgeToolset` — ingest data dictionaries, PDFs, glossaries, ontologies into knowledge index (Chroma local / Vertex AI RAG Engine managed)
 - **Component Assembly Agent**: `AssemblyToolset` — analyze data sources, discover matching catalog components, propose Cluster hierarchies, call SDCStudio Assembly API
 - Fully autonomous: published, generated data model output — no human-in-the-loop (D4)
 - Components referenced by `ct_id`, never copied (D3)
