@@ -1,4 +1,4 @@
-# SDC Agents: Purpose-Scoped MCP Agents for SDC4 Data Operations
+# SDC Agents: Purpose-Scoped ADK Agents for SDC4 Data Operations
 
 **Date**: 2026-02-23
 **Status**: Draft
@@ -18,7 +18,7 @@ A single monolithic agent with broad access to datasources, file systems, and re
 
 ### Solution
 
-**SDC Agents** is an open-source suite of **purpose-scoped MCP agents**, each with narrowly defined tool access and auditable activity:
+**SDC Agents** is an open-source suite of **purpose-scoped ADK agents**, each implemented as an `LlmAgent` with a narrowly scoped `BaseToolset` and auditable activity:
 
 | Agent | Scope | Can Access | Cannot Access |
 |---|---|---|---|
@@ -29,13 +29,17 @@ A single monolithic agent with broad access to datasources, file systems, and re
 | **Validation Agent** | Instance validation and signing | VaaS API (token auth), local XML files | Datasources, schema management |
 | **Distribution Agent** | Artifact package routing | Unpacked artifact files, configured destinations | SDCStudio APIs, datasources |
 
-Each agent is a standalone MCP server. An orchestrating agent or human operator composes them — but no single agent can reach across boundaries. A compromised or misbehaving agent has blast radius limited to its scope.
+Each agent is an ADK `LlmAgent` with its own `BaseToolset` implementation. Tools are Python functions wrapped in `FunctionTool` — ADK derives input/output schemas from type hints and docstrings. An orchestrating agent, customer pipeline, or human operator composes them via `ToolContext.actions.transfer_to_agent` for sequential handoff — but no single agent can reach across boundaries. A compromised or misbehaving agent has blast radius limited to its scope.
+
+Customers can also consume SDC tools via **MCP** as a secondary interface — each `BaseToolset` can be exported as an MCP server using ADK's `adk_to_mcp_tool_type` conversion utility (see [MCP Export](#mcp-export-secondary-interface)).
 
 ### Value Proposition
 
 - **Least-privilege by design** — each agent has the minimum tools for its job
-- **Auditable** — every MCP tool invocation is logged with inputs, outputs, and timestamps
+- **Auditable** — every tool invocation is logged with inputs, outputs, and timestamps via a shared `AuditLogger`
 - **Data residency by default** — four of six agents run entirely locally with no network access. Only the Catalog Agent (public schema reads) and Validation Agent (VaaS API) make outbound calls. See [Data Residency and VaaS Transit](#data-residency-and-vaas-transit) for the precise data handling model.
+- **ADK-native** — built within Google's Agent Development Kit ecosystem as `LlmAgent` + `BaseToolset` + `FunctionTool`, composable with any ADK-based orchestration
+- **MCP-compatible** — secondary MCP export enables framework-agnostic integration for non-ADK clients
 - **Composable** — use one agent, some agents, or all agents depending on need
 - **Open source (Apache 2.0)** — customers can audit every line of code
 
@@ -43,16 +47,18 @@ Each agent is a standalone MCP server. An orchestrating agent or human operator 
 
 1. **No agent has both datasource access and network access** — the Introspect Agent reads data but cannot call APIs; the Validation Agent calls APIs but cannot read datasources
 2. **Read-only datasource access** — no agent can write to, modify, or delete customer data
-3. **Tools are declarative, not imperative** — tools describe what they do in their MCP schema; the agent cannot run arbitrary code
-4. **Structured audit log** — every tool call writes a JSON audit record (agent, tool, inputs, outputs, timestamp, duration)
-5. **No credential sharing** — each agent has its own credential scope; the Catalog Agent has no credentials; the Validation Agent has the VaaS API token; the Introspect Agent has datasource credentials
+3. **Tools are declarative Python functions** — ADK derives schemas from type hints and docstrings; agents cannot run arbitrary code
+4. **Structured audit log** — every tool call writes a JSON audit record (agent, tool, inputs, outputs, timestamp, duration) via a shared `AuditLogger` to append-only `.sdc-cache/audit.jsonl`
+5. **No credential sharing** — each `BaseToolset` constructor receives only its own credential scope; the Catalog Agent has no credentials; the Validation Agent has the VaaS API token; the Introspect Agent has datasource credentials
 6. **Fail closed** — if an agent encounters an error, it returns the error; it does not retry, escalate privileges, or fall back to broader access
 
 ---
 
 ## Architecture
 
-### Agent Isolation Model
+### ADK Agent Hierarchy
+
+Each SDC Agent is an ADK `LlmAgent` with a scoped `BaseToolset`. The `BaseToolset.get_tools()` method returns only the `FunctionTool` instances that agent is permitted to use. Credentials are injected at `BaseToolset` construction time from the operator-controlled YAML configuration — agents never receive credentials they don't need.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
@@ -66,32 +72,33 @@ Each agent is a standalone MCP server. An orchestrating agent or human operator 
 │         ▼                  ▼                        ▼                    │
 │  ┌─────────────┐   ┌─────────────┐   ┌──────────────────────────┐      │
 │  │  Introspect │   │   Mapping   │   │     Generator Agent      │      │
-│  │    Agent     │   │    Agent    │   │                          │      │
-│  │             │   │             │   │  reads: mapping configs   │      │
-│  │  tools: 3   │   │  tools: 3   │   │  reads: datasource       │      │
-│  │  network: ✗ │   │  network: ✗ │   │  writes: XML files       │      │
-│  │  writes: ✗  │   │  writes: ✓  │   │  network: ✗              │      │
-│  └──────┬──────┘   │  (configs   │   │  tools: 3                │      │
-│         │          │   only)     │   └────────────┬─────────────┘      │
-│         │          └─────────────┘                │                      │
+│  │  LlmAgent   │   │  LlmAgent   │   │     LlmAgent             │      │
+│  │             │   │             │   │                          │      │
+│  │  toolset: 3 │   │  toolset: 3 │   │  reads: mapping configs  │      │
+│  │  network: ✗ │   │  network: ✗ │   │  reads: datasource       │      │
+│  │  writes: ✗  │   │  writes: ✓  │   │  writes: XML files       │      │
+│  └──────┬──────┘   │  (configs   │   │  network: ✗              │      │
+│         │          │   only)     │   │  toolset: 3              │      │
+│         │          └─────────────┘   └────────────┬─────────────┘      │
 │         │                                         │                      │
 │  ┌──────▼──────────────────────────────────────────▼───────────────────┐ │
-│  │                     Audit Log (append-only)                         │ │
+│  │              Shared AuditLogger (append-only)                       │ │
+│  │   .sdc-cache/audit.jsonl                                           │ │
 │  │   {agent, tool, inputs, outputs, timestamp, duration_ms}           │ │
 │  └─────────────────────────────────────────────────────────────────────┘ │
 │                                                                          │
 │  ┌─────────────┐                          ┌──────────────────────────┐  │
 │  │   Catalog   │──── HTTPS (no auth) ────▶│  SDCStudio               │  │
-│  │    Agent    │                          │  Catalog API             │  │
-│  │  tools: 5   │                          └──────────────────────────┘  │
+│  │  LlmAgent   │    OpenAPIToolset +      │  Catalog API             │  │
+│  │  toolset: 5 │    caching wrappers      └──────────────────────────┘  │
 │  │  network: ✓ │                                                        │
 │  │  datasrc: ✗ │                          ┌──────────────────────────┐  │
 │  └─────────────┘                          │  SDCStudio               │  │
 │  ┌─────────────┐──── HTTPS (token) ──────▶│  VaaS API                │  │
-│  │ Validation  │                          │                          │  │
-│  │    Agent    │◀── artifact package ─────│  ?package=true returns   │  │
-│  │  tools: 3   │    (.zip)                │  .zip with all formats   │  │
-│  │  network: ✓ │                          └──────────────────────────┘  │
+│  │ Validation  │    AuthCredential        │                          │  │
+│  │  LlmAgent   │                          │  ?package=true returns   │  │
+│  │  toolset: 3 │◀── artifact package ─────│  .zip with all formats   │  │
+│  │  network: ✓ │    (.zip)                └──────────────────────────┘  │
 │  │  datasrc: ✗ │                                                        │
 │  └──────┬──────┘                                                        │
 │         │ writes .zip                                                    │
@@ -105,12 +112,47 @@ Each agent is a standalone MCP server. An orchestrating agent or human operator 
 │         ▼           │  └──────────┘ └────────┘ └───────┘ └──────┘ │   │
 │  ┌─────────────┐    └───────────────────────────────────────────────┘   │
 │  │Distribution │──── writes to configured destinations only             │
-│  │   Agent     │                                                        │
-│  │  tools: 4   │                                                        │
+│  │  LlmAgent   │                                                        │
+│  │  toolset: 4 │                                                        │
 │  │  network: ✓ │  (customer-local endpoints: triplestore, graph DB)     │
 │  │  datasrc: ✗ │                                                        │
 │  └─────────────┘                                                        │
 └──────────────────────────────────────────────────────────────────────────┘
+```
+
+### Agent Instantiation
+
+Each agent is instantiated as an ADK `LlmAgent` with a scoped toolset:
+
+```python
+from google.adk.agents import LlmAgent
+from sdc_agents.toolsets.catalog import CatalogToolset
+from sdc_agents.config import load_config
+
+config = load_config("sdc-agents.yaml")
+
+catalog_agent = LlmAgent(
+    name="catalog",
+    model="gemini-2.0-flash",
+    instruction="You are the SDC Catalog Agent. You discover published SDC4 "
+                "schemas and download schema-level artifacts from SDCStudio.",
+    tools=CatalogToolset(config=config).get_tools(),
+)
+```
+
+### Agent-to-Agent Handoff
+
+Sequential pipeline steps use ADK's `ToolContext.actions.transfer_to_agent` for handoff:
+
+```python
+from google.adk.tools import FunctionTool, ToolContext
+
+async def transfer_to_mapping(
+    tool_context: ToolContext,
+) -> str:
+    """Transfer control to the Mapping Agent after catalog and introspection are complete."""
+    tool_context.actions.transfer_to_agent = "mapping"
+    return "Handing off to Mapping Agent."
 ```
 
 ### Data Flow Between Agents
@@ -193,6 +235,35 @@ Fine-grained XSD constraints (min_length, max_length, enumerations, patterns) ar
 
 > **Note**: Some of these endpoints require SDCStudio-side enhancements. See the [SDCStudio enhancement spec](https://github.com/Axius-SDC/SDCStudio/blob/main/docs/dev/agentic-registry/SDCStudio_API_Agents_PRD.md) for implementation details on the skeleton endpoint, individual artifact serving, ontology endpoint, and catalog detail serializer changes.
 
+#### OpenAPIToolset for Catalog API
+
+SDCStudio already serves an OpenAPI specification at `/api/docs/` via `drf-yasg`. The Catalog Agent leverages ADK's `OpenAPIToolset` to auto-generate tools from this spec:
+
+```python
+from google.adk.tools.openapi_tool import OpenAPIToolset
+
+# Auto-generate tools from SDCStudio's OpenAPI spec
+catalog_api_tools = OpenAPIToolset(
+    spec_url=f"{config.sdcstudio.base_url}/api/docs/?format=openapi",
+)
+```
+
+The auto-generated tools cover list/detail/download endpoints. Custom `FunctionTool` wrappers add `.sdc-cache/` file persistence and immutable-schema caching on top:
+
+```python
+from google.adk.tools import FunctionTool
+
+async def catalog_get_schema(ct_id: str) -> dict:
+    """Get detailed metadata and component tree for a published model.
+
+    Checks .sdc-cache/schemas/ first. If cached, returns immediately.
+    Otherwise calls the Catalog API and caches the response.
+    """
+    ...
+```
+
+This approach auto-generates the API bindings while custom wrappers handle caching, file persistence, and audit logging.
+
 ### Validation Agent (token authentication)
 
 | Endpoint | Method | Purpose |
@@ -202,17 +273,81 @@ Fine-grained XSD constraints (min_length, max_length, enumerations, patterns) ar
 
 Both endpoints accept an optional `?package=true` query parameter. When set, VaaS returns a zip artifact package instead of a single XML response.
 
+The Validation Agent authenticates via ADK's `AuthCredential` pattern:
+
+```python
+from google.adk.auth import AuthCredential, AuthCredentialTypes, ApiKeyCredentialConfig
+
+vaas_credential = AuthCredential(
+    auth_type=AuthCredentialTypes.API_KEY,
+    api_key=ApiKeyCredentialConfig(
+        name="Authorization",
+        value=f"Token {config.sdcstudio.api_key}",
+        location="header",
+    ),
+)
+```
+
 No other endpoints are permitted. The agents have no general HTTP capability.
 
 ---
 
 ## Agent Specifications
 
+### BaseToolset Pattern
+
+Every agent's tools are grouped in a `BaseToolset` subclass. The toolset constructor receives configuration (including credentials for that scope only), and `get_tools()` returns the scoped `FunctionTool` list:
+
+```python
+from google.adk.tools import BaseToolset, FunctionTool
+from sdc_agents.audit import AuditLogger
+
+class CatalogToolset(BaseToolset):
+    """Tools for discovering and downloading published SDC4 schemas."""
+
+    def __init__(self, config: SDCAgentsConfig):
+        self._base_url = config.sdcstudio.base_url
+        self._cache_dir = config.cache.directory
+        self._audit = AuditLogger(config.audit)
+
+    def get_tools(self) -> list[FunctionTool]:
+        return [
+            FunctionTool(catalog_list_schemas),
+            FunctionTool(catalog_get_schema),
+            FunctionTool(catalog_download_schema_rdf),
+            FunctionTool(catalog_download_skeleton),
+            FunctionTool(catalog_download_ontologies),
+        ]
+```
+
+### Audit Logging
+
+Every tool function calls the shared `AuditLogger` at entry and exit. The audit log is an append-only `.sdc-cache/audit.jsonl` file — not `ToolContext.state` (which is LLM-visible and mutable).
+
+`ToolContext` is used only for flow control: `skip_summarization` and `transfer_to_agent`.
+
+```python
+class AuditLogger:
+    """Append-only structured audit logger for all SDC Agent tool invocations."""
+
+    def __init__(self, config: AuditConfig):
+        self._path = config.path  # .sdc-cache/audit.jsonl
+        self._log_level = config.log_level
+
+    def log(self, agent: str, tool: str, inputs: dict,
+            outputs: dict, duration_ms: int, status: str,
+            error: str | None = None) -> None:
+        """Append a JSON audit record. Never modifies prior entries."""
+        ...
+```
+
+---
+
 ### Agent 1: Catalog Agent
 
 **Purpose**: Discover published SDC4 models and download schema-level RDF and reference ontologies from SDCStudio.
 
-**Credential scope**: None (Catalog API is public).
+**Credential scope**: None (Catalog API is public). Config-injected: `base_url` only.
 
 **Network access**: HTTPS to configured SDCStudio base URL only.
 
@@ -224,33 +359,81 @@ No other endpoints are permitted. The agents have no general HTTP capability.
 
 List published SDC4 data models.
 
-| Field | Value |
-|---|---|
-| **Input** | `project` (string, optional): filter by project name; `search` (string, optional): text search |
-| **Output** | Array of `{ct_id, title, description, project, artifact_urls}` |
-| **API Call** | `GET /api/v1/catalog/dms/?project={project}&search={search}` |
+```python
+async def catalog_list_schemas(
+    project: str | None = None,
+    search: str | None = None,
+) -> list[dict]:
+    """List published SDC4 data models from the SDCStudio Catalog API.
+
+    Args:
+        project: Filter by project name.
+        search: Text search across model titles and descriptions.
+
+    Returns:
+        List of dicts with keys: ct_id, title, description, project, artifact_urls.
+
+    API Call:
+        GET /api/v1/catalog/dms/?project={project}&search={search}
+    """
+```
 
 ##### `catalog_get_schema`
 
 Get detailed metadata and component tree for a published model. The component tree tells the Mapping Agent what components exist, what SDC4 types they are, and how they're organized in Clusters.
 
-| Field | Value |
-|---|---|
-| **Input** | `ct_id` (string, required): CUID2 identifier |
-| **Output** | `{ct_id, title, description, project, components: [{name, type, ct_id, parent_cluster}], artifact_urls}` |
-| **Side Effect** | Caches response to `.sdc-cache/schemas/{ct_id}_detail.json` |
-| **API Call** | `GET /api/v1/catalog/dm/{ct_id}/` |
+```python
+async def catalog_get_schema(
+    ct_id: str,
+) -> dict:
+    """Get detailed metadata and component tree for a published model.
+
+    Args:
+        ct_id: CUID2 identifier of the published model.
+
+    Returns:
+        Dict with keys: ct_id, title, description, project,
+        components (list of {name, type, ct_id, parent_cluster}), artifact_urls.
+
+    Side Effect:
+        Caches response to .sdc-cache/schemas/{ct_id}_detail.json.
+
+    API Call:
+        GET /api/v1/catalog/dm/{ct_id}/
+    """
+```
 
 ##### `catalog_download_schema_rdf`
 
 Download and cache the schema-level RDF triples, SHACL shapes, and GQL for a published model. SDC4 schemas are immutable once published — the agent fetches them once and caches forever.
 
-| Field | Value |
-|---|---|
-| **Input** | `ct_id` (string, required): CUID2 identifier; `formats` (array of enum: `ttl`, `shacl`, `gql`, default all three) |
-| **Output** | `{ct_id, files: [{format, path, cached: bool}]}` |
-| **Side Effect** | Saves to `.sdc-cache/schemas/dm-{ct_id}.ttl`, `.sdc-cache/schemas/dm-{ct_id}_shacl.ttl`, `.sdc-cache/schemas/dm-{ct_id}.gql` (only files not already cached) |
-| **API Calls** | `GET /api/v1/catalog/dm/{ct_id}/ttl/`, `/shacl/`, `/gql/` (only for uncached files) |
+```python
+async def catalog_download_schema_rdf(
+    ct_id: str,
+    formats: list[str] | None = None,
+) -> dict:
+    """Download and cache schema-level RDF triples, SHACL shapes, and GQL.
+
+    Args:
+        ct_id: CUID2 identifier of the published model.
+        formats: List of formats to download ('ttl', 'shacl', 'gql').
+            Defaults to all three.
+
+    Returns:
+        Dict with keys: ct_id, files (list of {format, path, cached: bool}).
+
+    Side Effect:
+        Saves to .sdc-cache/schemas/dm-{ct_id}.ttl,
+        .sdc-cache/schemas/dm-{ct_id}_shacl.ttl,
+        .sdc-cache/schemas/dm-{ct_id}.gql (only uncached files).
+
+    API Calls:
+        GET /api/v1/catalog/dm/{ct_id}/ttl/
+        GET /api/v1/catalog/dm/{ct_id}/shacl/
+        GET /api/v1/catalog/dm/{ct_id}/gql/
+        (only for uncached files)
+    """
+```
 
 ##### `catalog_download_skeleton`
 
@@ -261,23 +444,53 @@ Download the pre-generated **maximal** XML skeleton template and field mapping f
 
 The skeleton is **immutable** for a given `ct_id` (same schema = same skeleton). The agent fetches it once and caches forever.
 
-| Field | Value |
-|---|---|
-| **Input** | `ct_id` (string, required): CUID2 identifier |
-| **Output** | `{ct_id, skeleton_path, field_mapping_path, cached: bool}` |
-| **Side Effect** | Saves to `.sdc-cache/schemas/{ct_id}_skeleton.xml` and `.sdc-cache/schemas/{ct_id}_field_mapping.json` (only if not already cached) |
-| **API Call** | `GET /api/v1/catalog/dm/{ct_id}/skeleton/` (returns JSON with `skeleton_xml` and `field_mapping` keys, only if not cached) |
+```python
+async def catalog_download_skeleton(
+    ct_id: str,
+) -> dict:
+    """Download the XML skeleton template and field mapping for a published model.
+
+    Args:
+        ct_id: CUID2 identifier of the published model.
+
+    Returns:
+        Dict with keys: ct_id, skeleton_path, field_mapping_path, cached (bool).
+
+    Side Effect:
+        Saves to .sdc-cache/schemas/{ct_id}_skeleton.xml and
+        .sdc-cache/schemas/{ct_id}_field_mapping.json (only if not cached).
+
+    API Call:
+        GET /api/v1/catalog/dm/{ct_id}/skeleton/
+        (returns JSON with skeleton_xml and field_mapping keys, only if not cached)
+    """
+```
 
 ##### `catalog_download_ontologies`
 
 Download the SDC4 reference model ontologies and commonly-used third-party ontologies. This is a **one-time operation** — the ontologies are immutable for the lifetime of a major SDC version (currently SDC4).
 
-| Field | Value |
-|---|---|
-| **Input** | `ontologies` (array of string, optional): specific ontology names; if omitted, downloads all SDC4 core ontologies |
-| **Output** | `{files: [{name, path, cached: bool, description}]}` |
-| **Side Effect** | Saves to `.sdc-cache/ontologies/` (only files not already cached) |
-| **API Call** | `GET /api/v1/catalog/ontologies/` (list), `GET /api/v1/catalog/ontologies/{name}/` (download, only if not cached) |
+```python
+async def catalog_download_ontologies(
+    ontologies: list[str] | None = None,
+) -> dict:
+    """Download SDC4 reference ontologies and third-party ontologies.
+
+    Args:
+        ontologies: Specific ontology names to download. If omitted,
+            downloads all SDC4 core ontologies.
+
+    Returns:
+        Dict with keys: files (list of {name, path, cached: bool, description}).
+
+    Side Effect:
+        Saves to .sdc-cache/ontologies/ (only uncached files).
+
+    API Calls:
+        GET /api/v1/catalog/ontologies/ (list)
+        GET /api/v1/catalog/ontologies/{name}/ (download, only if not cached)
+    """
+```
 
 **Available ontologies** (served from SDCStudio):
 
@@ -348,7 +561,7 @@ The VaaS API extracts the `ct_id` from the root element name — no additional m
 
 **Purpose**: Examine customer datasources and extract structure. **Read-only** — cannot modify data.
 
-**Credential scope**: Datasource credentials (connection strings) from configuration.
+**Credential scope**: Datasource credentials (connection strings) from configuration, injected at `IntrospectToolset` construction.
 
 **Network access**: None (no outbound HTTP). Database connections are to customer-local infrastructure only.
 
@@ -360,34 +573,82 @@ The VaaS API extracts the `ct_id` from the root element name — no additional m
 
 Examine a SQL datasource and extract column structure.
 
-| Field | Value |
-|---|---|
-| **Input** | `datasource` (string, required): named datasource from config; `query` (string, optional): override SQL query |
-| **Output** | `{datasource, columns: [{name, sql_type, nullable, sample_values, unique_count}], row_count}` |
-| **Side Effect** | Writes result to `.sdc-cache/introspections/{datasource}.json` |
-| **Constraints** | Read-only queries enforced (SELECT only, no DDL/DML). Connection string from config, not from tool input. |
+```python
+async def introspect_sql(
+    datasource: str,
+    query: str | None = None,
+) -> dict:
+    """Examine a SQL datasource and extract column structure.
+
+    Args:
+        datasource: Named datasource from config (not a raw connection string).
+        query: Override SQL query. Defaults to datasource's configured query.
+
+    Returns:
+        Dict with keys: datasource, columns (list of {name, sql_type, nullable,
+        sample_values, unique_count}), row_count.
+
+    Side Effect:
+        Writes result to .sdc-cache/introspections/{datasource}.json.
+
+    Constraints:
+        Read-only queries enforced (SELECT only, no DDL/DML).
+        Connection string from config, not from tool input.
+    """
+```
 
 ##### `introspect_csv`
 
 Examine a CSV file and infer column types from sample values.
 
-| Field | Value |
-|---|---|
-| **Input** | `datasource` (string, required): named datasource from config |
-| **Output** | `{datasource, columns: [{name, detected_type, nullable, sample_values, unique_count}], row_count}` |
-| **Side Effect** | Writes result to `.sdc-cache/introspections/{datasource}.json` |
-| **Constraints** | File path from config, not from tool input. Read-only file access. |
+```python
+async def introspect_csv(
+    datasource: str,
+) -> dict:
+    """Examine a CSV file and infer column types from sample values.
+
+    Args:
+        datasource: Named datasource from config (not a raw file path).
+
+    Returns:
+        Dict with keys: datasource, columns (list of {name, detected_type,
+        nullable, sample_values, unique_count}), row_count.
+
+    Side Effect:
+        Writes result to .sdc-cache/introspections/{datasource}.json.
+
+    Constraints:
+        File path from config, not from tool input. Read-only file access.
+    """
+```
 
 ##### `introspect_json`
 
 Examine a JSON file or structure and extract field types.
 
-| Field | Value |
-|---|---|
-| **Input** | `datasource` (string, required): named datasource from config; `jsonpath` (string, optional): JSONPath for nested extraction |
-| **Output** | `{datasource, columns: [{name, json_type, nullable, sample_values, unique_count}], row_count}` |
-| **Side Effect** | Writes result to `.sdc-cache/introspections/{datasource}.json` |
-| **Constraints** | File path from config, not from tool input. Read-only file access. |
+```python
+async def introspect_json(
+    datasource: str,
+    jsonpath: str | None = None,
+) -> dict:
+    """Examine a JSON file and extract field types.
+
+    Args:
+        datasource: Named datasource from config (not a raw file path).
+        jsonpath: JSONPath expression for nested extraction.
+            Defaults to datasource's configured jsonpath.
+
+    Returns:
+        Dict with keys: datasource, columns (list of {name, json_type, nullable,
+        sample_values, unique_count}), row_count.
+
+    Side Effect:
+        Writes result to .sdc-cache/introspections/{datasource}.json.
+
+    Constraints:
+        File path from config, not from tool input. Read-only file access.
+    """
+```
 
 **Security note**: The Introspect Agent accepts datasource names (not raw connection strings or file paths) as tool input. All connection details come from the operator-controlled configuration file. This prevents prompt injection attacks from tricking the agent into connecting to unintended datasources.
 
@@ -397,7 +658,7 @@ Examine a JSON file or structure and extract field types.
 
 **Purpose**: Suggest and manage column-to-component mappings between introspection results and downloaded schemas.
 
-**Credential scope**: None.
+**Credential scope**: None. Config-injected: cache directory path only.
 
 **Network access**: None.
 
@@ -409,33 +670,82 @@ Examine a JSON file or structure and extract field types.
 
 Suggest column-to-component mappings by comparing an introspection result against the cached catalog detail (component tree with SDC4 types).
 
-| Field | Value |
-|---|---|
-| **Input** | `ct_id` (string, required): target schema; `datasource` (string, required): introspection result name |
-| **Output** | `{mappings: [{source_column, target_component, target_type, confidence, reason}], unmapped_columns: [], unmapped_components: []}` |
-| **Reads** | `.sdc-cache/schemas/{ct_id}_detail.json` (catalog detail with component tree), `.sdc-cache/introspections/{datasource}.json` |
-| **Logic** | Type compatibility (see [Type Mapping Tables](#type-mapping-tables)) + name similarity scoring. Fine-grained constraints are enforced server-side by VaaS at validation time. |
+```python
+async def mapping_suggest(
+    ct_id: str,
+    datasource: str,
+) -> dict:
+    """Suggest column-to-component mappings for a schema and datasource.
+
+    Args:
+        ct_id: Target schema CUID2 identifier.
+        datasource: Introspection result name.
+
+    Returns:
+        Dict with keys: mappings (list of {source_column, target_component,
+        target_type, confidence, reason}), unmapped_columns, unmapped_components.
+
+    Reads:
+        .sdc-cache/schemas/{ct_id}_detail.json (catalog detail with component tree)
+        .sdc-cache/introspections/{datasource}.json
+
+    Logic:
+        Type compatibility (see Type Mapping Tables) + name similarity scoring.
+        Fine-grained constraints enforced server-side by VaaS at validation time.
+    """
+```
 
 ##### `mapping_confirm`
 
 Accept, adjust, and persist a mapping configuration.
 
-| Field | Value |
-|---|---|
-| **Input** | `ct_id` (string, required); `datasource` (string, required); `mappings` (array of `{source_column, target_component}`); `name` (string, required): mapping profile name |
-| **Output** | `{mapping_name, ct_id, datasource, column_count, valid: bool, errors: []}` |
-| **Side Effect** | Writes to `.sdc-cache/mappings/{name}.json` |
-| **Validation** | Type compatibility, required components covered, constraint feasibility |
+```python
+async def mapping_confirm(
+    ct_id: str,
+    datasource: str,
+    mappings: list[dict],
+    name: str,
+) -> dict:
+    """Accept, adjust, and persist a mapping configuration.
+
+    Args:
+        ct_id: Target schema CUID2 identifier.
+        datasource: Introspection result name.
+        mappings: List of {source_column, target_component} dicts.
+        name: Mapping profile name.
+
+    Returns:
+        Dict with keys: mapping_name, ct_id, datasource, column_count,
+        valid (bool), errors (list).
+
+    Side Effect:
+        Writes to .sdc-cache/mappings/{name}.json.
+
+    Validation:
+        Type compatibility, required components covered, constraint feasibility.
+    """
+```
 
 ##### `mapping_list`
 
 List saved mapping profiles.
 
-| Field | Value |
-|---|---|
-| **Input** | `ct_id` (string, optional): filter by schema |
-| **Output** | Array of `{name, ct_id, datasource, column_count, created_at}` |
-| **Reads** | `.sdc-cache/mappings/` directory listing |
+```python
+async def mapping_list(
+    ct_id: str | None = None,
+) -> list[dict]:
+    """List saved mapping profiles.
+
+    Args:
+        ct_id: Filter by schema CUID2 identifier.
+
+    Returns:
+        List of dicts with keys: name, ct_id, datasource, column_count, created_at.
+
+    Reads:
+        .sdc-cache/mappings/ directory listing.
+    """
+```
 
 ---
 
@@ -443,7 +753,7 @@ List saved mapping profiles.
 
 **Purpose**: Produce SDC4 XML instance documents from mapped datasource records.
 
-**Credential scope**: Datasource credentials (read-only, for fetching record data).
+**Credential scope**: Datasource credentials (read-only, for fetching record data), injected at `GeneratorToolset` construction.
 
 **Network access**: None.
 
@@ -472,32 +782,78 @@ The generation algorithm is:
 
 Generate a single SDC4 XML instance from one datasource record.
 
-| Field | Value |
-|---|---|
-| **Input** | `mapping_name` (string, required); `row_index` (int, optional): row from datasource; `record` (object, optional): explicit key-value data |
-| **Output** | `{xml_path, ct_id, root_element, row_index}` |
-| **Side Effect** | Writes XML to output directory |
-| **Reads** | Mapping config, skeleton XML template, field mapping JSON, datasource record |
+```python
+async def generate_instance(
+    mapping_name: str,
+    row_index: int | None = None,
+    record: dict | None = None,
+) -> dict:
+    """Generate a single SDC4 XML instance from one datasource record.
+
+    Args:
+        mapping_name: Name of the mapping profile.
+        row_index: Row index from datasource.
+        record: Explicit key-value data (alternative to row_index).
+
+    Returns:
+        Dict with keys: xml_path, ct_id, root_element, row_index.
+
+    Side Effect:
+        Writes XML to output directory.
+
+    Reads:
+        Mapping config, skeleton XML template, field mapping JSON, datasource record.
+    """
+```
 
 ##### `generate_batch`
 
 Generate XML instances for multiple records.
 
-| Field | Value |
-|---|---|
-| **Input** | `mapping_name` (string, required); `limit` (int, optional, default 100); `offset` (int, optional, default 0) |
-| **Output** | `{count, output_dir, files: [string], errors: [{row, error}]}` |
-| **Side Effect** | Writes XML files to output directory |
+```python
+async def generate_batch(
+    mapping_name: str,
+    limit: int = 100,
+    offset: int = 0,
+) -> dict:
+    """Generate XML instances for multiple datasource records.
+
+    Args:
+        mapping_name: Name of the mapping profile.
+        limit: Maximum number of records to process.
+        offset: Starting record index.
+
+    Returns:
+        Dict with keys: count, output_dir, files (list of str),
+        errors (list of {row, error}).
+
+    Side Effect:
+        Writes XML files to output directory.
+    """
+```
 
 ##### `generate_preview`
 
 Generate XML for a single record without writing to disk — for review before committing to a batch.
 
-| Field | Value |
-|---|---|
-| **Input** | `mapping_name` (string, required); `row_index` (int, optional, default 0) |
-| **Output** | `{xml: string, ct_id, root_element}` |
-| **Side Effect** | None — preview only |
+```python
+async def generate_preview(
+    mapping_name: str,
+    row_index: int = 0,
+) -> dict:
+    """Generate XML for a single record without writing to disk.
+
+    Args:
+        mapping_name: Name of the mapping profile.
+        row_index: Row index from datasource.
+
+    Returns:
+        Dict with keys: xml (str), ct_id, root_element.
+
+    Side Effect:
+        None — preview only.
+    """
+```
 
 ---
 
@@ -505,7 +861,7 @@ Generate XML for a single record without writing to disk — for review before c
 
 **Purpose**: Validate and optionally sign generated XML instances via the VaaS API. Optionally request a full artifact package for downstream distribution.
 
-**Credential scope**: VaaS API token.
+**Credential scope**: VaaS API token, injected at `ValidationToolset` construction via ADK's `AuthCredential`.
 
 **Network access**: HTTPS to configured SDCStudio base URL only (VaaS endpoints).
 
@@ -517,35 +873,95 @@ Generate XML for a single record without writing to disk — for review before c
 
 Validate an XML instance against its schema via VaaS.
 
-| Field | Value |
-|---|---|
-| **Input** | `xml_path` (string, required): path to XML file in output directory; `mode` (enum: `report`, `recover`, default `recover`); `package` (bool, optional, default false): request artifact package |
-| **Output** | `{valid, mode, schema: {ct_id, title}, structural_errors, semantic_errors, recovered, errors: [], package_path: string or null}` |
-| **Side Effect** | If recovered, writes `.recovered.xml` alongside original. If `package=true`, writes `.pkg.zip` alongside original. |
-| **API Call** | `POST /api/v1/vaas/validate/?mode={mode}&package={package}` |
-| **Constraints** | File must be in configured output directory. No arbitrary path access. |
+```python
+async def validate_instance(
+    xml_path: str,
+    mode: str = "recover",
+    package: bool = False,
+) -> dict:
+    """Validate an XML instance against its schema via VaaS.
+
+    Args:
+        xml_path: Path to XML file in output directory.
+        mode: Validation mode ('report' or 'recover').
+        package: Request artifact package (.zip) from VaaS.
+
+    Returns:
+        Dict with keys: valid, mode, schema ({ct_id, title}),
+        structural_errors, semantic_errors, recovered, errors (list),
+        package_path (str or None).
+
+    Side Effect:
+        If recovered, writes .recovered.xml alongside original.
+        If package=True, writes .pkg.zip alongside original.
+
+    API Call:
+        POST /api/v1/vaas/validate/?mode={mode}&package={package}
+
+    Constraints:
+        File must be in configured output directory. No arbitrary path access.
+    """
+```
 
 ##### `sign_instance`
 
 Validate and cryptographically sign an XML instance via VaaS.
 
-| Field | Value |
-|---|---|
-| **Input** | `xml_path` (string, required): path to XML file; `recover` (bool, default true); `package` (bool, optional, default false): request artifact package |
-| **Output** | `{valid, signed, signature: {algorithm, issuer, timestamp, schema_ct_id, ev_count}, verification: {public_key_url, verify_command}, package_path: string or null}` |
-| **Side Effect** | Writes `.signed.xml` alongside original. If `package=true`, writes `.pkg.zip` alongside original. |
-| **API Call** | `POST /api/v1/vaas/validate/sign/?recover={recover}&package={package}` |
+```python
+async def sign_instance(
+    xml_path: str,
+    recover: bool = True,
+    package: bool = False,
+) -> dict:
+    """Validate and cryptographically sign an XML instance via VaaS.
+
+    Args:
+        xml_path: Path to XML file.
+        recover: Attempt recovery before signing.
+        package: Request artifact package (.zip) from VaaS.
+
+    Returns:
+        Dict with keys: valid, signed, signature ({algorithm, issuer, timestamp,
+        schema_ct_id, ev_count}), verification ({public_key_url, verify_command}),
+        package_path (str or None).
+
+    Side Effect:
+        Writes .signed.xml alongside original.
+        If package=True, writes .pkg.zip alongside original.
+
+    API Call:
+        POST /api/v1/vaas/validate/sign/?recover={recover}&package={package}
+    """
+```
 
 ##### `validate_batch`
 
 Validate (and optionally sign) multiple XML instances, requesting artifact packages for all.
 
-| Field | Value |
-|---|---|
-| **Input** | `xml_dir` (string, optional): directory containing XML files (defaults to output directory); `sign` (bool, default false); `package` (bool, default true) |
-| **Output** | `{count, results: [{xml_path, valid, signed, package_path, errors}], failed: int}` |
-| **Side Effect** | Writes `.pkg.zip` files alongside each XML file |
-| **Constraints** | Processes files sequentially to respect VaaS rate limits |
+```python
+async def validate_batch(
+    xml_dir: str | None = None,
+    sign: bool = False,
+    package: bool = True,
+) -> dict:
+    """Validate and optionally sign multiple XML instances.
+
+    Args:
+        xml_dir: Directory containing XML files. Defaults to output directory.
+        sign: Also sign each valid instance.
+        package: Request artifact packages.
+
+    Returns:
+        Dict with keys: count, results (list of {xml_path, valid, signed,
+        package_path, errors}), failed (int).
+
+    Side Effect:
+        Writes .pkg.zip files alongside each XML file.
+
+    Constraints:
+        Processes files sequentially to respect VaaS rate limits.
+    """
+```
 
 ---
 
@@ -553,7 +969,7 @@ Validate (and optionally sign) multiple XML instances, requesting artifact packa
 
 **Purpose**: Unpack VaaS artifact packages and route each artifact to its configured destination on the customer's infrastructure.
 
-**Credential scope**: Customer-local service credentials (triplestore, graph DB, REST APIs) from configuration.
+**Credential scope**: Customer-local service credentials (triplestore, graph DB, REST APIs) from configuration, injected at `DistributionToolset` construction.
 
 **Network access**: Customer-local endpoints only (Fuseki, GraphDB, Neo4j, REST APIs). No access to SDCStudio APIs.
 
@@ -565,53 +981,121 @@ Validate (and optionally sign) multiple XML instances, requesting artifact packa
 
 Unpack an artifact package and route all artifacts to their configured destinations.
 
-| Field | Value |
-|---|---|
-| **Input** | `package_path` (string, required): path to `.pkg.zip` file |
-| **Output** | `{package_path, ct_id, artifacts_distributed: int, results: [{artifact, destination, status}]}` |
-| **Logic** | Reads `manifest.json` from the zip. For each artifact, looks up the destination in config. Delivers the artifact. Reports per-artifact success/failure. |
-| **Side Effect** | Writes artifacts to configured destinations (triplestore, graph DB, file system, REST APIs) |
+```python
+async def distribute_package(
+    package_path: str,
+) -> dict:
+    """Unpack an artifact package and route artifacts to configured destinations.
+
+    Args:
+        package_path: Path to .pkg.zip file.
+
+    Returns:
+        Dict with keys: package_path, ct_id, artifacts_distributed (int),
+        results (list of {artifact, destination, status}).
+
+    Logic:
+        Reads manifest.json from the zip. For each artifact, looks up the
+        destination in config. Delivers the artifact. Reports per-artifact
+        success/failure.
+
+    Side Effect:
+        Writes artifacts to configured destinations (triplestore, graph DB,
+        file system, REST APIs).
+    """
+```
 
 ##### `distribute_batch`
 
 Distribute all artifact packages in a directory.
 
-| Field | Value |
-|---|---|
-| **Input** | `package_dir` (string, optional): directory containing `.pkg.zip` files (defaults to output directory) |
-| **Output** | `{count, results: [{package_path, artifacts_distributed, errors}], failed: int}` |
+```python
+async def distribute_batch(
+    package_dir: str | None = None,
+) -> dict:
+    """Distribute all artifact packages in a directory.
+
+    Args:
+        package_dir: Directory containing .pkg.zip files.
+            Defaults to output directory.
+
+    Returns:
+        Dict with keys: count, results (list of {package_path,
+        artifacts_distributed, errors}), failed (int).
+    """
+```
 
 ##### `list_destinations`
 
 List configured distribution destinations and their status.
 
-| Field | Value |
-|---|---|
-| **Input** | None |
-| **Output** | Array of `{name, type, endpoint, status: "reachable" or "unreachable"}` |
-| **Logic** | Reads destinations from config. Performs a connectivity check for each. |
+```python
+async def list_destinations() -> list[dict]:
+    """List configured distribution destinations and their connectivity status.
+
+    Returns:
+        List of dicts with keys: name, type, endpoint,
+        status ('reachable' or 'unreachable').
+
+    Logic:
+        Reads destinations from config. Performs a connectivity check for each.
+    """
+```
 
 ##### `inspect_package`
 
 Inspect the contents of an artifact package without distributing it.
 
-| Field | Value |
-|---|---|
-| **Input** | `package_path` (string, required): path to `.pkg.zip` file |
-| **Output** | `{ct_id, instance_id, artifacts: [{type, filename, size_bytes}], manifest: object}` |
-| **Side Effect** | None — inspection only |
+```python
+async def inspect_package(
+    package_path: str,
+) -> dict:
+    """Inspect the contents of an artifact package without distributing it.
+
+    Args:
+        package_path: Path to .pkg.zip file.
+
+    Returns:
+        Dict with keys: ct_id, instance_id, artifacts (list of {type, filename,
+        size_bytes}), manifest (dict).
+
+    Side Effect:
+        None — inspection only.
+    """
+```
 
 ##### `bootstrap_triplestore`
 
 Load SDC4 reference ontologies and schema-level RDF into the customer's triplestore. The agent checks for existing named graphs before uploading — idempotent and safe to call repeatedly.
 
-| Field | Value |
-|---|---|
-| **Input** | `ct_id` (string, optional): also load schema-level RDF for a specific model; `include_third_party` (bool, default true): load third-party ontologies |
-| **Output** | `{graphs_loaded: [{name, graph_uri, triple_count, status: "loaded" or "already_exists"}]}` |
-| **Reads** | `.sdc-cache/ontologies/`, `.sdc-cache/schemas/dm-{ct_id}.ttl` (if ct_id provided) |
-| **Side Effect** | Uploads ontology files to triplestore as named graphs (only if not already present) |
-| **Named Graphs** | `urn:sdc4:ontology:sdc4`, `urn:sdc4:ontology:sdc4-meta`, `urn:sdc4:schema:dm-{ct_id}`, etc. |
+```python
+async def bootstrap_triplestore(
+    ct_id: str | None = None,
+    include_third_party: bool = True,
+) -> dict:
+    """Load SDC4 reference ontologies and schema-level RDF into the triplestore.
+
+    Args:
+        ct_id: Also load schema-level RDF for a specific model.
+        include_third_party: Load third-party ontologies (om-2, sio, etc.).
+
+    Returns:
+        Dict with keys: graphs_loaded (list of {name, graph_uri, triple_count,
+        status ('loaded' or 'already_exists')}).
+
+    Reads:
+        .sdc-cache/ontologies/
+        .sdc-cache/schemas/dm-{ct_id}.ttl (if ct_id provided)
+
+    Side Effect:
+        Uploads ontology files to triplestore as named graphs
+        (only if not already present).
+
+    Named Graphs:
+        urn:sdc4:ontology:sdc4, urn:sdc4:ontology:sdc4-meta,
+        urn:sdc4:schema:dm-{ct_id}, etc.
+    """
+```
 
 **Triplestore bootstrap sequence** (automatically handled by agents):
 
@@ -766,24 +1250,105 @@ destinations:
     create_directories: true
 ```
 
+### ADK Runner Configuration
+
+Instantiate all agents and compose them in an ADK runner:
+
+```python
+from google.adk.agents import LlmAgent
+from google.adk.runners import Runner
+from google.adk.sessions import InMemorySessionService
+
+from sdc_agents.config import load_config
+from sdc_agents.toolsets.catalog import CatalogToolset
+from sdc_agents.toolsets.introspect import IntrospectToolset
+from sdc_agents.toolsets.mapping import MappingToolset
+from sdc_agents.toolsets.generator import GeneratorToolset
+from sdc_agents.toolsets.validation import ValidationToolset
+from sdc_agents.toolsets.distribution import DistributionToolset
+
+config = load_config("sdc-agents.yaml")
+
+# Each toolset receives only the credentials it needs
+catalog_agent = LlmAgent(
+    name="catalog",
+    model="gemini-2.0-flash",
+    instruction="Discover published SDC4 schemas and download artifacts.",
+    tools=CatalogToolset(config=config).get_tools(),
+)
+
+introspect_agent = LlmAgent(
+    name="introspect",
+    model="gemini-2.0-flash",
+    instruction="Examine customer datasources and extract structure (read-only).",
+    tools=IntrospectToolset(config=config).get_tools(),
+)
+
+mapping_agent = LlmAgent(
+    name="mapping",
+    model="gemini-2.0-flash",
+    instruction="Suggest and manage column-to-component mappings.",
+    tools=MappingToolset(config=config).get_tools(),
+)
+
+generator_agent = LlmAgent(
+    name="generator",
+    model="gemini-2.0-flash",
+    instruction="Produce SDC4 XML instances from mapped datasource records.",
+    tools=GeneratorToolset(config=config).get_tools(),
+)
+
+validation_agent = LlmAgent(
+    name="validation",
+    model="gemini-2.0-flash",
+    instruction="Validate and sign XML instances via the VaaS API.",
+    tools=ValidationToolset(config=config).get_tools(),
+)
+
+distribution_agent = LlmAgent(
+    name="distribution",
+    model="gemini-2.0-flash",
+    instruction="Route artifact packages to customer-local destinations.",
+    tools=DistributionToolset(config=config).get_tools(),
+)
+
+# Compose as sub-agents of a root orchestrator (optional)
+root_agent = LlmAgent(
+    name="sdc_pipeline",
+    model="gemini-2.0-flash",
+    instruction="Orchestrate the SDC4 data transformation pipeline.",
+    sub_agents=[
+        catalog_agent, introspect_agent, mapping_agent,
+        generator_agent, validation_agent, distribution_agent,
+    ],
+)
+
+# Run with ADK runner
+runner = Runner(
+    agent=root_agent,
+    app_name="sdc-agents",
+    session_service=InMemorySessionService(),
+)
+```
+
 ### Credential Isolation
 
-| Credential | Available To | Stored In |
+| Credential | Available To | Injected Via |
 |---|---|---|
-| Datasource connection strings | Introspect Agent, Generator Agent | `sdc-agents.yaml` (env var refs) |
-| VaaS API token | Validation Agent only | `sdc-agents.yaml` (env var ref) |
-| SDCStudio base URL | Catalog Agent, Validation Agent | `sdc-agents.yaml` |
-| Triplestore credentials | Distribution Agent only | `sdc-agents.yaml` (env var refs) |
-| Graph DB credentials | Distribution Agent only | `sdc-agents.yaml` (env var refs) |
-| REST API tokens | Distribution Agent only | `sdc-agents.yaml` (env var refs) |
+| Datasource connection strings | Introspect Agent, Generator Agent | `IntrospectToolset(config=...)`, `GeneratorToolset(config=...)` |
+| VaaS API token | Validation Agent only | `ValidationToolset(config=...)` with `AuthCredential` |
+| SDCStudio base URL | Catalog Agent, Validation Agent | `CatalogToolset(config=...)`, `ValidationToolset(config=...)` |
+| Triplestore credentials | Distribution Agent only | `DistributionToolset(config=...)` |
+| Graph DB credentials | Distribution Agent only | `DistributionToolset(config=...)` |
+| REST API tokens | Distribution Agent only | `DistributionToolset(config=...)` |
 
-No agent receives credentials it does not need. The Mapping Agent has no credentials at all.
+No agent receives credentials it does not need. The Mapping Agent's `MappingToolset` constructor receives only the cache directory path.
 
 ---
 
 ## Audit Log
 
-Every tool invocation across all agents writes a structured JSON record to an append-only audit log:
+Every tool invocation across all agents writes a structured JSON record to an append-only audit log via the shared `AuditLogger`:
 
 ```json
 {
@@ -811,6 +1376,36 @@ Every tool invocation across all agents writes a structured JSON record to an ap
 - Outputs are logged at summary level (column count, row count) not full data
 - The log path is configurable; defaults to `.sdc-cache/audit.jsonl`
 - Log rotation and retention are the operator's responsibility
+- `ToolContext.state` is **not** used for audit logging (it is LLM-visible and mutable); `ToolContext` is used only for `skip_summarization` and `transfer_to_agent` flow control
+
+---
+
+## MCP Export (Secondary Interface)
+
+Each `BaseToolset` can be exported as an MCP server using ADK's `adk_to_mcp_tool_type` conversion utility. This enables customers using non-ADK MCP clients (Claude Desktop, LangChain MCP, or any MCP-compatible framework) to consume SDC tools without adopting ADK.
+
+```python
+from google.adk.tools.mcp_tool.conversion_utils import adk_to_mcp_tool_type
+from sdc_agents.toolsets.catalog import CatalogToolset
+
+config = load_config("sdc-agents.yaml")
+toolset = CatalogToolset(config=config)
+
+# Convert ADK FunctionTools to MCP tool definitions
+mcp_tools = [adk_to_mcp_tool_type(tool) for tool in toolset.get_tools()]
+```
+
+A CLI convenience command wraps this for standalone MCP server operation:
+
+```bash
+# Start the Catalog Agent as an MCP server
+sdc-agents serve --mcp catalog
+
+# Start the Introspect Agent as an MCP server
+sdc-agents serve --mcp introspect
+```
+
+**MCP is documented but not the primary development path.** The primary architecture is ADK-native — `LlmAgent` + `BaseToolset` + `FunctionTool`. MCP export is a compatibility layer for framework-agnostic integration.
 
 ---
 
@@ -844,11 +1439,11 @@ Customers handling sensitive data should:
 
 ## Resolved Decisions
 
-### D1: No orchestration — SDC provides primitives only
+### D1: ADK-native orchestration with MCP compatibility
 
-**Decision**: Do not build an orchestrator. SDC Agents provides purpose-scoped MCP tools. Customers bring their own orchestration layer — LangChain, Microsoft Copilot, Synalinks, or plain scripts.
+**Decision**: SDC Agents provides scoped agents composable within the ADK framework. Customers can also use MCP for framework-agnostic integration. SDC does not impose a specific orchestration pattern — customers bring their own pipeline logic using ADK sub-agents, `transfer_to_agent`, or plain scripts.
 
-**Rationale**: Staying out of the workflow/UI business avoids competing with partners and keeps the project focused on what only SDC can do — trusted schema-aware data transformation.
+**Rationale**: ADK provides the native agent composition primitives (sub-agents, tool context, handoff) that SDC Agents leverages. MCP export ensures compatibility with non-ADK ecosystems. Staying out of the workflow/UI business avoids competing with partners and keeps the project focused on what only SDC can do — trusted schema-aware data transformation.
 
 ---
 
@@ -859,11 +1454,11 @@ Customers handling sensitive data should:
 **Goal**: Three working agents covering discovery, introspection, and mapping.
 
 **Deliverables**:
-- Project scaffolding (Python package, per-agent MCP server entry points)
-- Shared audit log library (append-only JSON lines)
-- **Catalog Agent**: `catalog_list_schemas`, `catalog_get_schema`, `catalog_download_skeleton`, `catalog_download_schema_rdf`, `catalog_download_ontologies`
-- **Introspect Agent**: `introspect_sql` (SQLAlchemy-based), `introspect_csv`
-- **Mapping Agent**: `mapping_suggest`, `mapping_confirm`, `mapping_list`
+- Project scaffolding (Python package, per-agent ADK `BaseToolset` + `LlmAgent` definitions)
+- Shared `AuditLogger` library (append-only JSON lines to `.sdc-cache/audit.jsonl`)
+- **Catalog Agent**: `CatalogToolset` with `catalog_list_schemas`, `catalog_get_schema`, `catalog_download_skeleton`, `catalog_download_schema_rdf`, `catalog_download_ontologies`
+- **Introspect Agent**: `IntrospectToolset` with `introspect_sql` (SQLAlchemy-based), `introspect_csv`
+- **Mapping Agent**: `MappingToolset` with `mapping_suggest`, `mapping_confirm`, `mapping_list`
 - YAML configuration loader with env var substitution
 - Unit tests for all tools
 - Security tests: verify agents cannot access out-of-scope resources
@@ -875,20 +1470,21 @@ Customers handling sensitive data should:
 **Goal**: End-to-end flow from datasource to validated XML.
 
 **Deliverables**:
-- **Generator Agent**: `generate_instance`, `generate_batch`, `generate_preview`
-- **Validation Agent**: `validate_instance`, `sign_instance`, `validate_batch`
-- `introspect_json` tool added to Introspect Agent
+- **Generator Agent**: `GeneratorToolset` with `generate_instance`, `generate_batch`, `generate_preview`
+- **Validation Agent**: `ValidationToolset` with `validate_instance`, `sign_instance`, `validate_batch`
+- `introspect_json` tool added to `IntrospectToolset`
+- `OpenAPIToolset` integration for Catalog API (auto-generated bindings from SDCStudio's drf-yasg spec)
 - Improved type inference using string format inference patterns
 - Confidence scoring for mapping suggestions
 - Integration tests against SDCStudio staging environment
-- CLI wrapper for non-MCP usage
+- CLI wrapper for non-ADK usage
 
 ### Phase 3: Artifact Package and Distribution
 
 **Goal**: VaaS returns multi-format artifact packages; Distribution Agent delivers them.
 
 **Deliverables**:
-- **Distribution Agent**: `distribute_package`, `distribute_batch`, `list_destinations`, `inspect_package`, `bootstrap_triplestore`
+- **Distribution Agent**: `DistributionToolset` with `distribute_package`, `distribute_batch`, `list_destinations`, `inspect_package`, `bootstrap_triplestore`
 - Fuseki/GraphDB triplestore connector (named graph upload via SPARQL Graph Store Protocol)
 - Neo4j/Memgraph graph DB connector (GQL CREATE statement execution)
 - REST API connector (POST/PUT JSON payloads)
@@ -901,17 +1497,46 @@ Customers handling sensitive data should:
 
 ### Phase 4: Production Hardening
 
-**Goal**: Community-ready release with documentation and packaging.
+**Goal**: Community-ready release with documentation, packaging, and ecosystem integration.
 
 **Deliverables**:
 - Comprehensive documentation (README, per-agent guides, security model)
 - PyPI packaging (`pip install sdc-agents`)
-- MCP registry listings (one per agent, for granular discoverability)
+- MCP export adapters (per-agent MCP server mode via `adk_to_mcp_tool_type`)
+- ADK Integration Page contribution (`docs/integrations/sdc-agents.md` to `google/adk-docs` repo — see [ADK Integration Page](#adk-integration-page-phase-4))
 - Docker images (one per agent, for containerized deployment with network isolation)
 - GitHub Actions CI/CD (lint, test, security scan, publish)
 - Example configurations for common use cases (healthcare, IoT, financial)
 - Contribution guidelines and issue templates
 - Audit log viewer CLI (`sdc-agents audit show --agent distribution --last 24h`)
+
+### Phase 5: Component Assembly Agent (Future)
+
+**Goal**: Shift from consume-only to create-and-consume — agents can assemble bespoke SDC4 data models from published, reusable catalog components.
+
+Phase 5 will add a **Component Assembly Agent** that discovers published reusable components from the SDCStudio catalog and assembles them into bespoke data models via the SDCStudio API. This transforms SDC Agents from a consume-only pipeline (map data to existing schemas) into a create-and-consume platform (build new schemas from catalog building blocks, then map data to them).
+
+**Scope and deliverables to be defined after Phase 4 is complete.**
+
+---
+
+## ADK Integration Page (Phase 4)
+
+Phase 4 includes contributing an integration page to the `google/adk-docs` repository to get SDC Agents listed on the [ADK Integrations directory](https://google.github.io/adk-docs/integrations/) alongside GitHub, BigQuery, MongoDB, etc.
+
+**Required structure** (per `google/adk-docs` CONTRIBUTING.md):
+
+- **File**: `docs/integrations/sdc-agents.md`
+- **Frontmatter**: `catalog_title`, `catalog_description`, `catalog_icon`
+- **Sections**: Use cases, Prerequisites, Installation, "Use with agent" code example, Available tools table, Resources
+- **Logo asset**: `docs/integrations/assets/sdc-agents.png`
+
+**Prerequisites**:
+- Sign the Google CLA
+- Working PyPI package (`pip install sdc-agents`)
+- Complete integration documentation with testable code examples
+
+**PR acceptance criteria** (from ADK docs): completeness/testability, value for developers, publishability.
 
 ---
 
@@ -927,20 +1552,22 @@ Customers handling sensitive data should:
 - Routing artifact packages to customer-local destinations (Distribution Agent)
 - Structured audit logging of all tool invocations
 - YAML-based operator-controlled configuration
-- Per-agent MCP server interfaces
+- Per-agent ADK `BaseToolset` + `LlmAgent` definitions
+- MCP export as secondary compatibility interface
 
 ### Out of Scope
 
-- **Creating new SDC4 schemas** — agents map to existing published models only
 - **Modifying customer data** — all datasource access is strictly read-only
 - **Modifying SDCStudio data** — all API calls are read-only (Catalog) or validation/packaging (VaaS)
-- **Agent-to-agent direct communication** — agents share files, not messages
 - **Real-time streaming** — batch processing only; streaming is future work
 - **Schema evolution/migration** — operator selects the target `ct_id` explicitly
-- **GUI** — CLI and MCP tools only; a web UI is a possible community contribution
-- **Orchestration logic** — the suite provides agents; orchestration is the customer's choice
+- **GUI** — CLI and ADK/MCP tools only; a web UI is a possible community contribution
 - **VaaS artifact package generation** — server-side transformation is an SDCStudio enhancement (see [SDCStudio enhancement spec](https://github.com/Axius-SDC/SDCStudio/blob/main/docs/dev/agentic-registry/SDCStudio_API_Agents_PRD.md))
 - **Destination-specific query/read-back** — the Distribution Agent writes to destinations but does not query them
+
+### Future: Component Assembly
+
+**Creating new SDC4 schemas** is not in scope for Phases 1–4 — agents map to existing published models only. Phase 5 (future) will add a Component Assembly Agent that discovers published reusable components from the SDCStudio catalog and assembles them into bespoke data models via the SDCStudio API — shifting from consume-only to create-and-consume. See [Phase 5](#phase-5-component-assembly-agent-future).
 
 ---
 
@@ -969,7 +1596,7 @@ SDC Agents is successful when:
 3. The audit log captures every tool invocation with sufficient detail for compliance review
 4. A user with a published SDC4 schema and a SQL/CSV datasource can produce validated, multi-format artifact packages by composing the agents — without writing any XML, RDF, or GQL by hand
 5. The Distribution Agent can deliver artifacts to a triplestore, graph database, REST API, and file system from a single artifact package
-6. The MCP tool interfaces are compatible with major agent frameworks (Claude, LangChain, OpenAI Agents)
+6. The ADK-native agent definitions are composable within the ADK framework, with MCP compatibility layer for framework-agnostic integration
 7. Generated XML instances pass VaaS validation without structural errors
 8. The Apache 2.0 license and standalone repository enable community contributions without SDCStudio coupling
 9. End-to-end latency from datasource record to distributed artifacts is under 5 seconds per instance (excluding network latency to customer destinations)
