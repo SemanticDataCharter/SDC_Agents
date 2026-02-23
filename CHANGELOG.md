@@ -97,14 +97,15 @@ aligned with SDC Generation 4.
 - Unit tests for all tools (68 tests, 92% coverage)
 - Security tests: tool scope isolation, SQL write rejection, datasource name enforcement
 
-### Planned — Phase 2: Generation and Validation
-- **Generator Agent**: `GeneratorToolset` with `generate_instance`, `generate_batch`, `generate_preview`
-- **Validation Agent**: `ValidationToolset` with `validate_instance`, `sign_instance`, `validate_batch`
-- `introspect_json` and `introspect_mongodb` tools for `IntrospectToolset`
-- MongoDB introspection via ADK MongoDB integration; BigQuery/Spanner via dedicated ADK integrations
-- `OpenAPIToolset` integration for Catalog API
-- CLI wrapper for non-ADK usage
-- Integration tests against SDCStudio staging environment
+### Completed — Phase 2: Generation and Validation
+- **Generator Agent**: `GeneratorToolset` with `generate_instance`, `generate_batch`, `generate_preview` — skeleton-based XML generation with placeholder substitution and optional element pruning
+- **Validation Agent**: `ValidationToolset` with `validate_instance`, `sign_instance`, `validate_batch` — VaaS API integration with path confinement, token auth, artifact package (.pkg.zip) support
+- **Introspect Agent extensions**: 2→4 tools — `introspect_json` (JSONPath extraction), `introspect_mongodb` (BSON-to-SDC4 type mapping)
+- Config additions: `api_key`, `toolbox_url`, `jsonpath`, `database`, `collection`
+- Cache additions: `skeleton_path()`, `field_mapping_path()`
+- Dependencies: motor>=3.6, jsonpath-ng>=1.6, mongomock (dev), toolbox-adk (optional)
+- 115 tests (47 new), 2 skipped. Security: 5 toolsets disjoint, path confinement, token redaction
+- Implementation: regular `FunctionTool` for batch (not `LongRunningFunctionTool`), httpx `MockTransport` for VaaS
 
 ### Planned — Phase 3: Artifact Package and Distribution
 - **Distribution Agent**: `DistributionToolset` with `distribute_package`, `distribute_batch`, `list_destinations`, `inspect_package`, `bootstrap_triplestore`

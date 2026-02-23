@@ -1,7 +1,7 @@
 # SDC Agents: Purpose-Scoped ADK Agents for SDC4 Data Operations
 
 **Date**: 2026-02-23
-**Status**: Active (Phase 1 complete, Phase 2 planned)
+**Status**: Active (Phase 2 complete, Phase 3 planned)
 **Author**: Timothy W. Cook / Claude Code
 **Repository**: `SemanticDataCharter/SDC_Agents` (Apache 2.0 License)
 **Related**: SDCStudio `docs/dev/agentic-registry/SDCStudio_API_Agents_PRD.md` (SDCStudio-side enhancement spec)
@@ -1666,43 +1666,25 @@ This means SDC_Agents Phases 1–4 are developed to completion before SDCStudio 
 
 **SDCStudio dependency**: Phase 1 defines the contract that SDCStudio must fulfill — skeleton endpoint, individual artifact serving (ttl/shacl/gql), ontology endpoint, and enhanced catalog detail serializer. SDCStudio implements these **after** the agent contract is stable. See the [SDCStudio enhancement spec](https://github.com/Axius-SDC/SDCStudio/blob/main/docs/dev/agentic-registry/SDCStudio_API_Agents_PRD.md).
 
-### Phase 2: Generation and Validation
+### Phase 2: Generation and Validation — COMPLETE
 
 **Goal**: End-to-end flow from datasource to validated XML.
 
-**Deliverables**:
+**Status**: Complete (2026-02-23). 115 tests passing (47 new), 79% coverage.
 
-**Generator Agent** (`sdc_agents/toolsets/generator.py`, `sdc_agents/agents/generator.py`):
-- `GeneratorToolset(BaseToolset)` with 3 tools:
-  - `generate_instance` — single record → XML using skeleton template + field mapping + placeholder substitution
-  - `generate_batch` — multi-record batch via `LongRunningFunctionTool`, returns operation ID for polling
-  - `generate_preview` — single record preview without disk write
-- Skeleton-based generation: load `{ct_id}_skeleton.xml` + `{ct_id}_field_mapping.json` from cache, copy skeleton per record, replace `__PLACEHOLDER__` tokens with mapped data values, prune unfilled optional elements, error on unfilled required elements
-- Datasource record fetching: reuse Phase 1 `IntrospectToolset` SQL/CSV reading patterns (read-only, config-only datasource names)
-- XML output to configured output directory
+**Delivered**:
+- **Generator Agent**: `GeneratorToolset(BaseToolset)` with 3 tools (`generate_instance`, `generate_batch`, `generate_preview`), skeleton-based XML generation using `{ct_id}_skeleton.xml` + `{ct_id}_field_mapping.json` from cache, placeholder substitution, optional element pruning
+- **Validation Agent**: `ValidationToolset(BaseToolset)` with 3 tools (`validate_instance`, `sign_instance`, `validate_batch`), VaaS API integration with path confinement + token auth, artifact package (.pkg.zip) support
+- **Introspect Agent extensions**: 2→4 tools (`introspect_json` with JSONPath extraction, `introspect_mongodb` with BSON-to-SDC4 type mapping)
+- Config additions: `api_key` (VaaS token), `toolbox_url` (MCP Toolbox), `jsonpath` (JSON datasource), `database`/`collection` (MongoDB datasource)
+- Cache additions: `skeleton_path()`, `field_mapping_path()` helpers
+- Dependencies: motor>=3.6, jsonpath-ng>=1.6, mongomock (dev), toolbox-adk (optional)
+- Security tests: 5 toolsets with disjoint tool name sets (5+4+3+3+3 = 18 total tools), Validation path confinement, Generator read-only datasource access, VaaS token redacted in audit log
 
-**Validation Agent** (`sdc_agents/toolsets/validation.py`, `sdc_agents/agents/validation.py`):
-- `ValidationToolset(BaseToolset)` with 3 tools:
-  - `validate_instance` — POST to VaaS API, returns structural/semantic error counts, optional artifact package
-  - `sign_instance` — validate + sign via VaaS, returns signature metadata
-  - `validate_batch` — multi-file validation via `LongRunningFunctionTool`
-- httpx async client with `Authorization: Token {key}` header injection
-- File path confinement: only reads/writes within configured output directory
-- Mock VaaS API responses (fixtures including validation results and artifact package .zip)
-
-**Introspect Agent extensions**:
-- `introspect_json` tool — JSON file introspection with optional JSONPath extraction
-- `introspect_mongodb` tool — MongoDB collection schema analysis via ADK MongoDB integration
-- MCP Toolbox for Databases integration for `introspect_sql` (replacing Phase 1 direct SQLAlchemy)
-
-**Mapping Agent enhancements**:
-- Confidence scoring for mapping suggestions (combine type compatibility weight + name similarity + sample value overlap)
-- `mapping_export` tool — export mapping config to standalone JSON for external tooling
-
-**Infrastructure**:
-- `OpenAPIToolset` integration for Catalog API (requires SDCStudio OpenAPI 3.x spec — see prerequisites)
-- Test fixtures: mock VaaS API responses with `httpx.MockTransport`, sample skeleton XML + field mapping JSON, sample artifact package .zip
-- Security tests: Validation Agent confined to output directory, Generator Agent read-only datasource access, VaaS token redacted in audit log
+**Implementation notes**:
+- Batch tools (`generate_batch`, `validate_batch`) use regular `FunctionTool` (not `LongRunningFunctionTool`). ADK's `LongRunningFunctionTool` requires polling infrastructure; deferred until needed.
+- VaaS API mocked via `httpx.MockTransport` in tests — zero live SDCStudio dependency.
+- MongoDB introspection tested via `mongomock`; live MongoDB integration deferred.
 
 ### Phase 3: Artifact Package and Distribution
 

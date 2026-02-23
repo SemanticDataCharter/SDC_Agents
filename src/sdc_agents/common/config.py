@@ -74,6 +74,21 @@ class DatasourceConfig(BaseModel):
     collection: Optional[str] = None  # MongoDB collection name
 
 
+class DestinationConfig(BaseModel):
+    """A single distribution destination."""
+
+    type: Literal["fuseki", "graphdb", "neo4j", "rest_api", "filesystem"]
+    endpoint: Optional[str] = None
+    auth: Optional[str] = None
+    method: Optional[str] = None  # POST/PUT for rest_api
+    headers: Optional[Dict[str, str]] = None  # Custom headers for rest_api
+    database: Optional[str] = None  # Neo4j database
+    path: Optional[str] = None  # Filesystem path pattern
+    create_directories: bool = False  # Filesystem: create dirs
+    upload_method: str = "named_graph"  # Triplestore: upload method
+    graph_uri_from: str = "manifest"  # Triplestore: graph URI source
+
+
 class OutputConfig(BaseModel):
     """Output generation settings."""
 
@@ -89,6 +104,7 @@ class SDCAgentsConfig(BaseModel):
     audit: AuditConfig = Field(default_factory=AuditConfig)
     datasources: Dict[str, DatasourceConfig] = Field(default_factory=dict)
     output: OutputConfig = Field(default_factory=OutputConfig)
+    destinations: Dict[str, DestinationConfig] = Field(default_factory=dict)
 
 
 def load_config(path: str | Path) -> SDCAgentsConfig:
