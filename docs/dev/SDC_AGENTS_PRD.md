@@ -1505,6 +1505,21 @@ The Default project name is available in config (`sdc-agents.yaml`) so customers
 
 ---
 
+## Development Sequencing
+
+**Consumer-first, provider-second.** SDC_Agents (the consumer) is developed and tested first against the documented SDCStudio API contract using mocked responses. SDCStudio (the provider) implements the endpoints afterward to match what the agents actually need. This avoids building both sides in parallel, discovering mismatches at integration time, and reworking both.
+
+The sequence for each phase:
+
+1. **Build agents against the documented API contract** — mock SDCStudio responses during development
+2. **Test thoroughly with mocks** — the agent code crystallizes exactly what request/response shapes are needed
+3. **Implement SDCStudio endpoints** — build to match the verified consumer contract, not speculative predictions
+4. **Integration test** — final step, not a discovery step
+
+This means SDC_Agents Phases 1–4 are developed to completion before SDCStudio begins implementing its corresponding enhancements. The SDCStudio PRD becomes a *verified* spec, not a *predicted* one.
+
+---
+
 ## Implementation Phases
 
 ### Phase 1: Core Agents
@@ -1518,10 +1533,11 @@ The Default project name is available in config (`sdc-agents.yaml`) so customers
 - **Introspect Agent**: `IntrospectToolset` with `introspect_sql` (SQLAlchemy-based), `introspect_csv`
 - **Mapping Agent**: `MappingToolset` with `mapping_suggest`, `mapping_confirm`, `mapping_list`
 - YAML configuration loader with env var substitution
+- Mock SDCStudio API responses for all Catalog endpoints (fixtures for testing without a live SDCStudio instance)
 - Unit tests for all tools
 - Security tests: verify agents cannot access out-of-scope resources
 
-**SDCStudio dependency**: Phase 1 requires SDCStudio to implement the skeleton endpoint, individual artifact serving (ttl/shacl/gql), ontology endpoint, and enhanced catalog detail serializer. See the [SDCStudio enhancement spec](https://github.com/Axius-SDC/SDCStudio/blob/main/docs/dev/agentic-registry/SDCStudio_API_Agents_PRD.md).
+**SDCStudio dependency**: Phase 1 defines the contract that SDCStudio must fulfill — skeleton endpoint, individual artifact serving (ttl/shacl/gql), ontology endpoint, and enhanced catalog detail serializer. SDCStudio implements these **after** the agent contract is stable. See the [SDCStudio enhancement spec](https://github.com/Axius-SDC/SDCStudio/blob/main/docs/dev/agentic-registry/SDCStudio_API_Agents_PRD.md).
 
 ### Phase 2: Generation and Validation
 
@@ -1532,14 +1548,14 @@ The Default project name is available in config (`sdc-agents.yaml`) so customers
 - **Validation Agent**: `ValidationToolset` with `validate_instance`, `sign_instance`, `validate_batch`
 - `introspect_json` tool added to `IntrospectToolset`
 - `OpenAPIToolset` integration for Catalog API (auto-generated bindings from SDCStudio's drf-yasg spec)
+- Mock VaaS API responses for validation and signing (fixtures including artifact packages)
 - Improved type inference using string format inference patterns
 - Confidence scoring for mapping suggestions
-- Integration tests against SDCStudio staging environment
 - CLI wrapper for non-ADK usage
 
 ### Phase 3: Artifact Package and Distribution
 
-**Goal**: VaaS returns multi-format artifact packages; Distribution Agent delivers them.
+**Goal**: Distribution Agent delivers multi-format artifact packages to customer destinations.
 
 **Deliverables**:
 - **Distribution Agent**: `DistributionToolset` with `distribute_package`, `distribute_batch`, `list_destinations`, `inspect_package`, `bootstrap_triplestore`
@@ -1551,13 +1567,14 @@ The Default project name is available in config (`sdc-agents.yaml`) so customers
 - Destination health checks
 - Integration tests with local Fuseki and Neo4j
 
-**SDCStudio dependency**: Phase 3 requires SDCStudio to implement `?package=true` on VaaS endpoints. See the [SDCStudio enhancement spec](https://github.com/Axius-SDC/SDCStudio/blob/main/docs/dev/agentic-registry/SDCStudio_API_Agents_PRD.md).
+**SDCStudio dependency**: Phase 3 defines the artifact package contract (`manifest.json` structure, zip contents, `?package=true` behavior). SDCStudio implements the VaaS package support **after** the Distribution Agent's expectations are stable.
 
-### Phase 4: Production Hardening
+### Phase 4: Production Hardening and Integration Testing
 
-**Goal**: Community-ready release with documentation, packaging, and ecosystem integration.
+**Goal**: Community-ready release with documentation, packaging, ecosystem integration, and **end-to-end integration testing against live SDCStudio**.
 
 **Deliverables**:
+- **Integration tests against live SDCStudio** — validate mocked contracts match real API behavior
 - Comprehensive documentation (README, per-agent guides, security model)
 - PyPI packaging (`pip install sdc-agents`)
 - MCP export adapters (per-agent MCP server mode via `adk_to_mcp_tool_type`)
@@ -1567,6 +1584,8 @@ The Default project name is available in config (`sdc-agents.yaml`) so customers
 - Example configurations for common use cases (healthcare, IoT, financial)
 - Contribution guidelines and issue templates
 - Audit log viewer CLI (`sdc-agents audit show --agent distribution --last 24h`)
+
+**This is when SDCStudio enhancements are built and validated.** By Phase 4, every API contract has been battle-tested by the agent code. SDCStudio implements its Phases 1–3 (Catalog enhancements, VaaS packages, retention) to match the verified consumer contracts. Integration tests confirm both sides agree.
 
 ### Phase 5: Component Assembly and Knowledge Agents (Future)
 
@@ -1584,7 +1603,7 @@ Phase 5 adds two agents:
 - Assembly API authentication via API key → Modeler user → default project (same pattern as VaaS)
 - Intelligence on both sides: SDC_Agents handles analysis and discovery; SDCStudio handles assembly, validation, publication, and artifact generation
 
-**SDCStudio dependency**: Phase 5 requires a new `POST /api/v1/dmgen/assemble/` endpoint that accepts a hierarchical tree spec of component/Cluster references, creates Clusters, wires the DM, publishes, and runs the full generation pipeline.
+**Development sequence**: Same consumer-first pattern. Build and test both agents with mocked Assembly API responses. SDCStudio implements `POST /api/v1/dmgen/assemble/` afterward to match the verified contract.
 
 ---
 
