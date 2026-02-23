@@ -125,7 +125,12 @@ async def test_distribution_only_exposes_distribution_tools(security_config):
         "bootstrap_triplestore",
     }
     # No other toolset tools
-    assert not names & {"catalog_list_schemas", "introspect_sql", "generate_instance", "validate_instance"}
+    assert not names & {
+        "catalog_list_schemas",
+        "introspect_sql",
+        "generate_instance",
+        "validate_instance",
+    }
 
 
 # --- SQL write rejection ---

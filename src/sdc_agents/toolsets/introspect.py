@@ -221,9 +221,7 @@ class IntrospectToolset(BaseToolset):
         )
         return rows
 
-    async def introspect_csv(
-        self, datasource_name: str, max_rows: int = 100
-    ) -> dict:
+    async def introspect_csv(self, datasource_name: str, max_rows: int = 100) -> dict:
         """Introspect a CSV datasource to discover column structure and types.
 
         Reads the CSV file, infers types from sample values, and returns
@@ -264,11 +262,13 @@ class IntrospectToolset(BaseToolset):
         columns = []
         for name in fieldnames:
             values = column_values[name]
-            columns.append({
-                "name": name,
-                "inferred_type": _infer_type(values),
-                "sample_values": values[:5],
-            })
+            columns.append(
+                {
+                    "name": name,
+                    "inferred_type": _infer_type(values),
+                    "sample_values": values[:5],
+                }
+            )
 
         result = {
             "datasource": datasource_name,
@@ -309,9 +309,7 @@ class IntrospectToolset(BaseToolset):
         ds = self._get_datasource(datasource_name)
 
         if ds.type != "json":
-            raise ValueError(
-                f"Datasource '{datasource_name}' is type '{ds.type}', not 'json'"
-            )
+            raise ValueError(f"Datasource '{datasource_name}' is type '{ds.type}', not 'json'")
 
         json_path = Path(ds.path)
         if not json_path.is_file():
@@ -360,11 +358,13 @@ class IntrospectToolset(BaseToolset):
                 elif isinstance(first, list):
                     inferred = "array"
 
-            columns.append({
-                "name": name,
-                "inferred_type": inferred,
-                "sample_values": values[:5],
-            })
+            columns.append(
+                {
+                    "name": name,
+                    "inferred_type": inferred,
+                    "sample_values": values[:5],
+                }
+            )
 
         result = {
             "datasource": datasource_name,
@@ -406,9 +406,7 @@ class IntrospectToolset(BaseToolset):
         ds = self._get_datasource(datasource_name)
 
         if ds.type != "mongodb":
-            raise ValueError(
-                f"Datasource '{datasource_name}' is type '{ds.type}', not 'mongodb'"
-            )
+            raise ValueError(f"Datasource '{datasource_name}' is type '{ds.type}', not 'mongodb'")
 
         coll_name = collection or ds.collection
         if not coll_name:
@@ -466,12 +464,14 @@ class IntrospectToolset(BaseToolset):
                 # Pick the most common non-null type
                 types = info["types"] - {"null"}
                 bson_type = next(iter(types)) if types else "null"
-                fields.append({
-                    "name": name,
-                    "bson_type": bson_type,
-                    "nullable": info["nullable"],
-                    "sample_values": info["sample_values"],
-                })
+                fields.append(
+                    {
+                        "name": name,
+                        "bson_type": bson_type,
+                        "nullable": info["nullable"],
+                        "sample_values": info["sample_values"],
+                    }
+                )
         finally:
             client.close()
 

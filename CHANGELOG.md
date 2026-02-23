@@ -119,7 +119,7 @@ aligned with SDC Generation 4.
 - 143 tests (28 new), 2 skipped. Security: 6 toolsets disjoint (5+4+3+3+3+5 = 23 total tools), Distribution path confinement, destination credential redaction
 - Implementation: regular `FunctionTool` for batch (not `LongRunningFunctionTool`), httpx `MockTransport` for all connectors
 
-### In Progress — Phase 4 (Partial): CLI + PyPI Packaging
+### In Progress — Phase 4: Production Hardening
 - **CLI**: `sdc-agents` command with 4 subcommands:
   - `sdc-agents serve --mcp <agent>` — start any agent toolset as an MCP stdio server
   - `sdc-agents audit show` — inspect structured audit log with `--agent`, `--tool`, `--last`, `--limit` filters
@@ -127,16 +127,17 @@ aligned with SDC Generation 4.
   - `sdc-agents validate-config` — validate YAML config and report Pydantic errors
 - **PyPI metadata**: `[project.scripts]` entry point, `[project.urls]` (Repository, Documentation, Issues, Changelog), keywords, updated classifiers (removed stale Django, added Python 3.13, Typed)
 - 12 new CLI tests using `click.testing.CliRunner` (in-process, no subprocess)
+- **Docker**: single multi-stage image (`python:3.12-slim`), `SDC_AGENT` env var dispatch via entrypoint script, non-root `sdc` user (1000:1000), config volume mount at `/home/sdc/sdc-agents.yaml`
+- **CI**: GitHub Actions workflow with Python 3.11/3.12/3.13 matrix, ruff lint, black format check, pytest with coverage
+- **Docker publishing**: GHCR (`ghcr.io/semanticdatacharter/sdc-agents`) with short SHA + semver tags on `v*` tag push, `latest` on main
+- **PyPI publishing**: OIDC trusted publisher on `v*` tags — no API tokens, uses `pypa/gh-action-pypi-publish` with GitHub environment `pypi`
 
-### Planned — Phase 4: Production Hardening
-- PyPI packaging (`pip install sdc-agents`)
+### Planned — Phase 4 (Remaining)
 - MCP export adapters (per-agent MCP server mode)
 - ADK Integration Page contribution to `google/adk-docs`
 - **ADK Ecosystem Contribution** to `google/adk-docs` integrations directory:
   - `adk-sparql-tools` — SPARQL 1.1 / Fuseki / GraphDB (no triplestore integration exists in ADK ecosystem)
   - ~~`adk-neo4j-tools`~~ — superseded by MCP Toolbox for Databases (Neo4j + Dgraph support)
-- Docker images (one per agent)
-- GitHub Actions CI/CD
 - Comprehensive documentation and example configurations
 
 ### Planned — Phase 5: Component Assembly and Knowledge (Future)

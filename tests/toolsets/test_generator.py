@@ -76,9 +76,7 @@ async def test_get_tools_returns_three(generator_toolset: GeneratorToolset):
 
 async def test_generate_instance(generator_toolset: GeneratorToolset, tmp_path: Path):
     """Generate a single XML instance with substituted values."""
-    result = await generator_toolset.generate_instance(
-        mapping_name="lab_mapping", row_index=0
-    )
+    result = await generator_toolset.generate_instance(mapping_name="lab_mapping", row_index=0)
     assert result["ct_id"] == "clxyz123abc"
     assert result["row_index"] == 0
     assert "xml_path" in result
@@ -99,9 +97,7 @@ async def test_generate_instance_with_record(generator_toolset: GeneratorToolset
         "collected_date": "2026-03-01",
         "is_critical": "false",
     }
-    result = await generator_toolset.generate_instance(
-        mapping_name="lab_mapping", record=record
-    )
+    result = await generator_toolset.generate_instance(mapping_name="lab_mapping", record=record)
     xml_path = Path(result["xml_path"])
     content = xml_path.read_text()
     assert "CustomTest" in content
@@ -119,9 +115,7 @@ async def test_generate_instance_missing_required(populated_cache: SDCAgentsConf
         "collected_date": "2026-01-15",
         "is_critical": "true",
     }
-    result = await toolset.generate_instance(
-        mapping_name="lab_mapping", record=record
-    )
+    result = await toolset.generate_instance(mapping_name="lab_mapping", record=record)
     assert "errors" in result
     assert len(result["errors"]) > 0
 
@@ -135,9 +129,7 @@ async def test_generate_preview(generator_toolset: GeneratorToolset, tmp_path: P
     # Count files before preview
     files_before = list(output_dir.glob("*.xml"))
 
-    result = await generator_toolset.generate_preview(
-        mapping_name="lab_mapping", row_index=0
-    )
+    result = await generator_toolset.generate_preview(mapping_name="lab_mapping", row_index=0)
     assert "xml" in result
     assert "CBC" in result["xml"]
     assert result["ct_id"] == "clxyz123abc"
@@ -152,9 +144,7 @@ async def test_generate_preview(generator_toolset: GeneratorToolset, tmp_path: P
 
 async def test_generate_batch(generator_toolset: GeneratorToolset):
     """Batch generates multiple files."""
-    result = await generator_toolset.generate_batch(
-        mapping_name="lab_mapping", limit=3, offset=0
-    )
+    result = await generator_toolset.generate_batch(mapping_name="lab_mapping", limit=3, offset=0)
     assert result["count"] == 3
     assert len(result["files"]) == 3
     # Verify each file exists

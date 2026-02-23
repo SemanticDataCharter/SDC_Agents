@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 import time
 from difflib import SequenceMatcher
-from typing import Optional
 
 from google.adk.tools import FunctionTool
 from google.adk.tools.base_toolset import BaseToolset
@@ -105,12 +104,14 @@ class MappingToolset(BaseToolset):
             if comp_type not in compatible_types:
                 continue
             similarity = _name_similarity(column_name, component.get("label", ""))
-            suggestions.append({
-                "component_ct_id": component["ct_id"],
-                "component_label": component.get("label", ""),
-                "component_type": comp_type,
-                "score": round(similarity, 3),
-            })
+            suggestions.append(
+                {
+                    "component_ct_id": component["ct_id"],
+                    "component_label": component.get("label", ""),
+                    "component_type": comp_type,
+                    "score": round(similarity, 3),
+                }
+            )
 
         suggestions.sort(key=lambda s: s["score"], reverse=True)
 
@@ -188,11 +189,13 @@ class MappingToolset(BaseToolset):
         if mappings_dir.is_dir():
             for path in sorted(mappings_dir.glob("*.json")):
                 data = json.loads(path.read_text())
-                results.append({
-                    "name": data.get("name", path.stem),
-                    "count": len(data.get("mappings", [])),
-                    "path": str(path),
-                })
+                results.append(
+                    {
+                        "name": data.get("name", path.stem),
+                        "count": len(data.get("mappings", [])),
+                        "path": str(path),
+                    }
+                )
 
         self._audit.log(
             agent="mapping",

@@ -35,11 +35,16 @@ def make_package_zip(
     buf = BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("manifest.json", json.dumps(manifest))
-        zf.writestr("instance.xml", '<sdc4:dm-clxyz123abc xmlns:sdc4="urn:sdc4">test</sdc4:dm-clxyz123abc>')
+        xml_content = '<sdc4:dm-clxyz123abc xmlns:sdc4="urn:sdc4">' "test</sdc4:dm-clxyz123abc>"
+        zf.writestr("instance.xml", xml_content)
         zf.writestr("instance.json", '{"ct_id": "clxyz123abc", "data": "test"}')
-        zf.writestr("instance.ttl", "@prefix sdc4: <urn:sdc4:> .\nsdc4:test a sdc4:Instance .")
+        zf.writestr(
+            "instance.ttl",
+            "@prefix sdc4: <urn:sdc4:> .\nsdc4:test a sdc4:Instance .",
+        )
         zf.writestr("instance.gql", 'CREATE (n:Instance {ct_id: "clxyz123abc"})')
-        zf.writestr("instance.jsonld", '{"@context": {"sdc4": "urn:sdc4:"}, "@id": "urn:sdc4:clxyz123abc"}')
+        jsonld = '{"@context": {"sdc4": "urn:sdc4:"},' ' "@id": "urn:sdc4:clxyz123abc"}'
+        zf.writestr("instance.jsonld", jsonld)
     return buf.getvalue()
 
 

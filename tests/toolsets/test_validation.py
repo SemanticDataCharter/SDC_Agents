@@ -48,9 +48,7 @@ def sample_xml_file(validation_config: SDCAgentsConfig) -> Path:
     """Create a sample XML file in the output directory."""
     output_dir = Path(validation_config.output.directory)
     xml_file = output_dir / "clxyz123abc_0.xml"
-    xml_file.write_text(
-        '<?xml version="1.0"?>\n<sdc4:dm-clxyz123abc>test</sdc4:dm-clxyz123abc>'
-    )
+    xml_file.write_text('<?xml version="1.0"?>\n<sdc4:dm-clxyz123abc>test</sdc4:dm-clxyz123abc>')
     return xml_file
 
 
@@ -97,9 +95,7 @@ async def test_validate_instance_failure(
 # --- Signing ---
 
 
-async def test_sign_instance(
-    validation_config: SDCAgentsConfig, sample_xml_file: Path
-):
+async def test_sign_instance(validation_config: SDCAgentsConfig, sample_xml_file: Path):
     """Signing returns signature metadata and writes signed XML."""
     transport = _make_mock_transport(make_sign_response)
     client = httpx.AsyncClient(transport=transport, base_url="https://vaas.test.local")
@@ -120,9 +116,7 @@ async def test_sign_instance(
 # --- Auth token ---
 
 
-async def test_auth_token_in_header(
-    validation_config: SDCAgentsConfig, sample_xml_file: Path
-):
+async def test_auth_token_in_header(validation_config: SDCAgentsConfig, sample_xml_file: Path):
     """API token is included in Authorization header."""
     captured_headers = {}
 
@@ -170,13 +164,12 @@ async def test_path_confinement_rejects_traversal(
 # --- Batch validation ---
 
 
-async def test_validate_batch(
-    validation_config: SDCAgentsConfig, sample_xml_file: Path
-):
+async def test_validate_batch(validation_config: SDCAgentsConfig, sample_xml_file: Path):
     """Batch validates all XML files in the output directory."""
     # Create a second XML file
     output_dir = Path(validation_config.output.directory)
-    (output_dir / "clxyz123abc_1.xml").write_text("<sdc4:dm-clxyz123abc>row2</sdc4:dm-clxyz123abc>")
+    xml2 = "<sdc4:dm-clxyz123abc>row2</sdc4:dm-clxyz123abc>"
+    (output_dir / "clxyz123abc_1.xml").write_text(xml2)
 
     transport = _make_mock_transport(make_validation_success)
     client = httpx.AsyncClient(transport=transport, base_url="https://vaas.test.local")
@@ -208,9 +201,7 @@ async def test_validate_batch_excludes_recovered(
 # --- Audit logging ---
 
 
-async def test_audit_logged(
-    validation_config: SDCAgentsConfig, sample_xml_file: Path
-):
+async def test_audit_logged(validation_config: SDCAgentsConfig, sample_xml_file: Path):
     """Tool invocations are audit logged."""
     transport = _make_mock_transport(make_validation_success)
     client = httpx.AsyncClient(transport=transport, base_url="https://vaas.test.local")
@@ -223,9 +214,7 @@ async def test_audit_logged(
     assert records[-1]["agent"] == "validation"
 
 
-async def test_token_redacted_in_audit(
-    validation_config: SDCAgentsConfig, sample_xml_file: Path
-):
+async def test_token_redacted_in_audit(validation_config: SDCAgentsConfig, sample_xml_file: Path):
     """API token is redacted in audit logs."""
     transport = _make_mock_transport(make_validation_success)
     client = httpx.AsyncClient(transport=transport, base_url="https://vaas.test.local")

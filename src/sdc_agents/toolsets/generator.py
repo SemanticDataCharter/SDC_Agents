@@ -10,7 +10,6 @@ import csv
 import io
 import json
 import time
-import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Optional
 
@@ -73,9 +72,7 @@ class GeneratorToolset(BaseToolset):
         """Load field mapping from cache."""
         path = self._cache.field_mapping_path(ct_id)
         if not self._cache.is_cached(path):
-            raise FileNotFoundError(
-                f"Field mapping for schema '{ct_id}' not found in cache."
-            )
+            raise FileNotFoundError(f"Field mapping for schema '{ct_id}' not found in cache.")
         return json.loads(path.read_text())
 
     def _fetch_record(self, datasource_name: str, row_index: int) -> dict:
@@ -169,22 +166,26 @@ class GeneratorToolset(BaseToolset):
             if value is not None and str(value).strip():
                 xml_str = xml_str.replace(placeholder, str(value))
             elif field.get("required", False):
-                errors.append({
-                    "field": field["element_name"],
-                    "ct_id": comp_ct_id,
-                    "error": "Required field has no mapped value",
-                })
+                errors.append(
+                    {
+                        "field": field["element_name"],
+                        "ct_id": comp_ct_id,
+                        "error": "Required field has no mapped value",
+                    }
+                )
 
         # Handle unfilled optional placeholders — remove elements
         for field in field_mapping.get("fields", []):
             placeholder = field["placeholder"]
             if placeholder in xml_str:
                 if field.get("required", False):
-                    errors.append({
-                        "field": field["element_name"],
-                        "ct_id": field["ct_id"],
-                        "error": "Required field not mapped",
-                    })
+                    errors.append(
+                        {
+                            "field": field["element_name"],
+                            "ct_id": field["ct_id"],
+                            "error": "Required field not mapped",
+                        }
+                    )
                 else:
                     # Remove the element containing the unfilled placeholder
                     xml_str = self._remove_placeholder_element(xml_str, placeholder)
@@ -231,9 +232,7 @@ class GeneratorToolset(BaseToolset):
                 raise ValueError("Mapping config has no 'datasource' field")
             record = self._fetch_record(ds_name, row_index)
 
-        xml_str, errors = self._substitute(
-            skeleton_xml, field_mapping, mapping_config, record
-        )
+        xml_str, errors = self._substitute(skeleton_xml, field_mapping, mapping_config, record)
 
         if errors:
             # Still write the file but report errors
@@ -288,9 +287,7 @@ class GeneratorToolset(BaseToolset):
         errors = []
         for i in range(offset, offset + limit):
             try:
-                result = await self.generate_instance(
-                    mapping_name=mapping_name, row_index=i
-                )
+                result = await self.generate_instance(mapping_name=mapping_name, row_index=i)
                 files.append(result["xml_path"])
                 if "errors" in result:
                     errors.append({"row": i, "error": result["errors"]})
@@ -342,9 +339,7 @@ class GeneratorToolset(BaseToolset):
             raise ValueError("Mapping config has no 'datasource' field")
         record = self._fetch_record(ds_name, row_index)
 
-        xml_str, errors = self._substitute(
-            skeleton_xml, field_mapping, mapping_config, record
-        )
+        xml_str, errors = self._substitute(skeleton_xml, field_mapping, mapping_config, record)
 
         result = {
             "xml": xml_str,

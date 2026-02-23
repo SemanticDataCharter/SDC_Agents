@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -119,14 +118,24 @@ def test_audit_show_filter_last(tmp_path):
     old_ts = (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat()
     new_ts = datetime.now(timezone.utc).isoformat()
     records = [
-        {"timestamp": old_ts, "agent": "catalog", "tool": "old_tool", "inputs": {}, "duration_ms": 1},
-        {"timestamp": new_ts, "agent": "catalog", "tool": "new_tool", "inputs": {}, "duration_ms": 2},
+        {
+            "timestamp": old_ts,
+            "agent": "catalog",
+            "tool": "old_tool",
+            "inputs": {},
+            "duration_ms": 1,
+        },
+        {
+            "timestamp": new_ts,
+            "agent": "catalog",
+            "tool": "new_tool",
+            "inputs": {},
+            "duration_ms": 2,
+        },
     ]
     log.write_text("\n".join(json.dumps(r) for r in records) + "\n")
 
-    result = CliRunner().invoke(
-        main, ["audit", "show", "--audit-path", str(log), "--last", "1h"]
-    )
+    result = CliRunner().invoke(main, ["audit", "show", "--audit-path", str(log), "--last", "1h"])
     assert result.exit_code == 0
     assert "new_tool" in result.output
     assert "old_tool" not in result.output

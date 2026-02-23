@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import re
 import sys
 from datetime import datetime, timedelta, timezone
@@ -83,9 +82,7 @@ def main(ctx: click.Context, config: str | None) -> None:
 def serve(ctx: click.Context, mcp: str) -> None:
     """Start an agent toolset as an MCP stdio server."""
     if mcp not in AGENT_REGISTRY:
-        raise click.ClickException(
-            f"Unknown agent '{mcp}'. Valid agents: {_VALID_AGENTS}"
-        )
+        raise click.ClickException(f"Unknown agent '{mcp}'. Valid agents: {_VALID_AGENTS}")
 
     from sdc_agents.common.config import load_config
 
