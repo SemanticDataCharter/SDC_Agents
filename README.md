@@ -200,6 +200,41 @@ sdc-agents audit show --last 24h --limit 20  # recent records
 sdc-agents audit show --audit-path ./logs/audit.jsonl  # custom path
 ```
 
+### Docker
+
+A single image serves all 6 agents. Select the agent at runtime with `SDC_AGENT`:
+
+```bash
+# Serve a single agent as an MCP server
+docker run -v ./sdc-agents.yaml:/home/sdc/sdc-agents.yaml:ro \
+  -e SDC_AGENT=catalog \
+  ghcr.io/semanticdatacharter/sdc-agents
+
+# Run any CLI command
+docker run -v ./sdc-agents.yaml:/home/sdc/sdc-agents.yaml:ro \
+  ghcr.io/semanticdatacharter/sdc-agents info
+
+docker run -v ./sdc-agents.yaml:/home/sdc/sdc-agents.yaml:ro \
+  ghcr.io/semanticdatacharter/sdc-agents validate-config
+```
+
+Build locally:
+
+```bash
+docker build -t sdc-agents .
+docker run sdc-agents  # prints usage hint
+```
+
+### CI/CD
+
+- **CI** (`.github/workflows/ci.yml`): Runs on push to `dev` and PRs to `main`. Lints with ruff, checks formatting with black, runs pytest with coverage across Python 3.11/3.12/3.13.
+- **Docker** (`.github/workflows/docker.yml`): Builds and pushes to GHCR on push to `main` and `v*` tags.
+- **PyPI** (`.github/workflows/release.yml`): Publishes to PyPI on `v*` tags via OIDC trusted publisher (no API tokens).
+
+**One-time setup** (maintainer):
+1. Configure [PyPI trusted publisher](https://docs.pypi.org/trusted-publishers/) — owner: `SemanticDataCharter`, repo: `SDC_Agents`, workflow: `release.yml`, environment: `pypi`
+2. Create a `pypi` environment in GitHub repo settings (Settings > Environments)
+
 ### Testing
 
 ```bash
