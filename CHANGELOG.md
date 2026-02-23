@@ -73,16 +73,29 @@ aligned with SDC Generation 4.
 - **Observability** (Phase 4) — Google Cloud Trace, OpenTelemetry export, Phoenix, MLflow
 - Vertex AI Search referenced for Phase 5 semantic component discovery
 - MCP stateful connection scalability constraint documented
+- **Phase 1 implementation** — three working agents with shared infrastructure (consumer-first, no live SDCStudio dependency):
+  - `pyproject.toml` — hatchling build with google-adk, pydantic, pyyaml, httpx, sqlalchemy deps
+  - `sdc_agents.common.config` — Pydantic config models with YAML loader and `${VAR}` env substitution (fail-closed)
+  - `sdc_agents.common.audit` — `AuditLogger` append-only JSONL with automatic credential redaction (connection/token/key/password/secret)
+  - `sdc_agents.common.cache` — `CacheManager` with path helpers for schemas/ontologies/introspections/mappings
+  - `sdc_agents.toolsets.catalog` — `CatalogToolset(BaseToolset)` with 5 tools, httpx async client, cache-first for immutable schemas
+  - `sdc_agents.toolsets.introspect` — `IntrospectToolset(BaseToolset)` with 2 tools, SELECT-only SQL regex enforcement, CSV type inference (boolean/integer/decimal/date/datetime/time/email/URL/UUID/string)
+  - `sdc_agents.toolsets.mapping` — `MappingToolset(BaseToolset)` with 3 tools, TYPE_COMPATIBILITY matrix, name similarity scoring, persist/list
+  - `sdc_agents.agents.catalog` — `create_catalog_agent()` factory → `LlmAgent` with `CatalogToolset`
+  - `sdc_agents.agents.introspect` — `create_introspect_agent()` factory → `LlmAgent` with `IntrospectToolset`
+  - `sdc_agents.agents.mapping` — `create_mapping_agent()` factory → `LlmAgent` with `MappingToolset`
+  - 68 tests (92% coverage) including security isolation: SQL write rejection, datasource name enforcement, tool scope isolation
+  - Mock fixtures matching SDCStudio serializer shapes via `httpx.MockTransport`
 
-### Planned — Phase 1: Core Agents
+### Completed — Phase 1: Core Agents
 - Project scaffolding (Python package, per-agent ADK `BaseToolset` + `LlmAgent` definitions)
 - Shared `AuditLogger` library (append-only JSON lines)
 - YAML configuration loader with env var substitution
 - **Catalog Agent**: `CatalogToolset` with `catalog_list_schemas`, `catalog_get_schema`, `catalog_download_skeleton`, `catalog_download_schema_rdf`, `catalog_download_ontologies`
-- **Introspect Agent**: `IntrospectToolset` with `introspect_sql` (via MCP Toolbox for Databases), `introspect_csv`
+- **Introspect Agent**: `IntrospectToolset` with `introspect_sql` (SQLAlchemy async, SELECT-only), `introspect_csv` (type inference)
 - **Mapping Agent**: `MappingToolset` with `mapping_suggest`, `mapping_confirm`, `mapping_list`
-- Unit tests for all tools
-- Security tests: verify agents cannot access out-of-scope resources
+- Unit tests for all tools (68 tests, 92% coverage)
+- Security tests: tool scope isolation, SQL write rejection, datasource name enforcement
 
 ### Planned — Phase 2: Generation and Validation
 - **Generator Agent**: `GeneratorToolset` with `generate_instance`, `generate_batch`, `generate_preview`
