@@ -119,7 +119,7 @@ aligned with SDC Generation 4.
 - 143 tests (28 new), 2 skipped. Security: 6 toolsets disjoint (5+4+3+3+3+5 = 23 total tools), Distribution path confinement, destination credential redaction
 - Implementation: regular `FunctionTool` for batch (not `LongRunningFunctionTool`), httpx `MockTransport` for all connectors
 
-### In Progress — Phase 4: Production Hardening
+### Completed — Phase 4: Production Hardening
 - **CLI**: `sdc-agents` command with 4 subcommands:
   - `sdc-agents serve --mcp <agent>` — start any agent toolset as an MCP stdio server
   - `sdc-agents audit show` — inspect structured audit log with `--agent`, `--tool`, `--last`, `--limit` filters
@@ -131,14 +131,13 @@ aligned with SDC Generation 4.
 - **CI**: GitHub Actions workflow with Python 3.11/3.12/3.13 matrix, ruff lint, black format check, pytest with coverage
 - **Docker publishing**: GHCR (`ghcr.io/semanticdatacharter/sdc-agents`) with short SHA + semver tags on `v*` tag push, `latest` on main
 - **PyPI publishing**: OIDC trusted publisher on `v*` tags — no API tokens, uses `pypa/gh-action-pypi-publish` with GitHub environment `pypi`
-
-### Planned — Phase 4 (Remaining)
-- MCP export adapters (per-agent MCP server mode)
-- ADK Integration Page contribution to `google/adk-docs`
-- **ADK Ecosystem Contribution** to `google/adk-docs` integrations directory:
-  - `adk-sparql-tools` — SPARQL 1.1 / Fuseki / GraphDB (no triplestore integration exists in ADK ecosystem)
-  - ~~`adk-neo4j-tools`~~ — superseded by MCP Toolbox for Databases (Neo4j + Dgraph support)
-- Comprehensive documentation and example configurations
+- **MCP export adapters**: per-agent MCP server via `sdc-agents serve --mcp <agent>`, ADK-to-MCP conversion via `adk_to_mcp_tool_type()`
+- **User documentation suite** (`docs/user/`):
+  - `index.md` — entry point with pipeline diagram, security model, cache structure
+  - `configuration.md` — full config reference with annotated YAML, field tables, env var docs, minimal examples
+  - `tool-reference.md` — all 23 tools across 6 agents with parameter tables and return shapes
+  - `mcp-integration.md` — MCP server setup for Claude Desktop, Cursor, and generic stdio clients
+  - `workflows.md` — step-by-step guides for CSV-to-XML, audit/troubleshooting, triplestore bootstrap
 
 ### Planned — Phase 5: Component Assembly and Knowledge (Future)
 - **Knowledge Agent**: `KnowledgeToolset` — ingest data dictionaries, PDFs, glossaries, ontologies into knowledge index (Chroma local / Vertex AI RAG Engine managed)
@@ -147,6 +146,12 @@ aligned with SDC Generation 4.
 - Components referenced by `ct_id`, never copied (D3)
 - Contextual components (Audit, Attestation, Party, etc.) from Default project library (D7)
 - SDCStudio dependency: `POST /api/v1/dmgen/assemble/` endpoint
+
+### Planned — Phase 6: ADK Ecosystem Contributions (Future)
+- ADK Integration Page contribution to `google/adk-docs`
+- **ADK Ecosystem Contribution** to `google/adk-docs` integrations directory:
+  - `adk-sparql-tools` — SPARQL 1.1 / Fuseki / GraphDB (no triplestore integration exists in ADK ecosystem)
+  - ~~`adk-neo4j-tools`~~ — superseded by MCP Toolbox for Databases (Neo4j + Dgraph support)
 
 ---
 
