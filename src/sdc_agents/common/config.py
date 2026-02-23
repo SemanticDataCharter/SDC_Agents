@@ -45,6 +45,8 @@ class SDCStudioConfig(BaseModel):
     """SDCStudio API connection settings."""
 
     base_url: str = "https://sdcstudio.example.com"
+    api_key: Optional[str] = None  # VaaS token (Validation Agent only)
+    toolbox_url: Optional[str] = None  # MCP Toolbox server URL (optional)
 
 
 class CacheConfig(BaseModel):
@@ -67,6 +69,9 @@ class DatasourceConfig(BaseModel):
     type: Literal["sql", "csv", "json", "mongodb"]
     connection_string: Optional[str] = None
     path: Optional[str] = None
+    jsonpath: Optional[str] = None  # JSONPath expression for JSON datasources
+    database: Optional[str] = None  # MongoDB database name
+    collection: Optional[str] = None  # MongoDB collection name
 
 
 class OutputConfig(BaseModel):

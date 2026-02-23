@@ -52,3 +52,15 @@ def test_is_cached_false_for_empty(tmp_cache: CacheManager):
     path = tmp_cache.schema_path("empty")
     path.write_text("")
     assert not tmp_cache.is_cached(path)
+
+
+def test_skeleton_path(tmp_cache: CacheManager):
+    """skeleton_path returns correct path."""
+    path = tmp_cache.skeleton_path("clxyz123abc")
+    assert path == tmp_cache.root / "schemas" / "clxyz123abc_skeleton.xml"
+
+
+def test_field_mapping_path(tmp_cache: CacheManager):
+    """field_mapping_path returns correct path."""
+    path = tmp_cache.field_mapping_path("clxyz123abc")
+    assert path == tmp_cache.root / "schemas" / "clxyz123abc_field_mapping.json"

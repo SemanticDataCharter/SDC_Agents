@@ -4,7 +4,8 @@
 
 sdcstudio:
   base_url: "https://sdcstudio.example.com"
-  # No auth required for Catalog API (public, read-only)
+  api_key: "${SDC_API_KEY}"          # VaaS token (Validation Agent only)
+  toolbox_url: "http://localhost:5000"  # MCP Toolbox server (optional)
 
 cache:
   root: ".sdc-cache"
@@ -21,6 +22,15 @@ datasources:
   patient_csv:
     type: "csv"
     path: "/data/exports/patients.csv"
+  records_json:
+    type: "json"
+    path: "/data/exports/records.json"
+    jsonpath: "$.results[*]"
+  clinical_db:
+    type: "mongodb"
+    connection_string: "${MONGO_CONNECTION}"
+    database: "clinical"
+    collection: "lab_results"
 
 output:
   directory: "./output"

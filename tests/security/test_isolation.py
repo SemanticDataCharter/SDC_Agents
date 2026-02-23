@@ -14,16 +14,24 @@ import pytest
 
 from sdc_agents.common.config import SDCAgentsConfig
 from sdc_agents.toolsets.catalog import CatalogToolset
+from sdc_agents.toolsets.generator import GeneratorToolset
 from sdc_agents.toolsets.introspect import IntrospectToolset
 from sdc_agents.toolsets.mapping import MappingToolset
+from sdc_agents.toolsets.validation import ValidationToolset
 
 
 @pytest.fixture
 def security_config(tmp_path: Path) -> SDCAgentsConfig:
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
     return SDCAgentsConfig(
-        sdcstudio={"base_url": "https://test.local"},
+        sdcstudio={
+            "base_url": "https://test.local",
+            "api_key": "test-secret-key",
+        },
         cache={"root": str(tmp_path / ".sdc-cache")},
         audit={"path": str(tmp_path / "audit.jsonl"), "log_level": "verbose"},
+        output={"directory": str(output_dir)},
         datasources={
             "allowed_db": {
                 "type": "sql",
@@ -55,11 +63,16 @@ async def test_catalog_only_exposes_catalog_tools(security_config):
 
 
 async def test_introspect_only_exposes_introspect_tools(security_config):
-    """Introspect toolset has exactly 2 introspect-scoped tools."""
+    """Introspect toolset has exactly 4 introspect-scoped tools."""
     toolset = IntrospectToolset(config=security_config)
     tools = await toolset.get_tools()
     names = {t.name for t in tools}
-    assert names == {"introspect_sql", "introspect_csv"}
+    assert names == {
+        "introspect_sql",
+        "introspect_csv",
+        "introspect_json",
+        "introspect_mongodb",
+    }
     # No catalog or mapping tools
     assert not names & {"catalog_list_schemas", "mapping_suggest"}
 
@@ -72,6 +85,28 @@ async def test_mapping_only_exposes_mapping_tools(security_config):
     assert names == {"mapping_suggest", "mapping_confirm", "mapping_list"}
     # No catalog or introspect tools
     assert not names & {"catalog_list_schemas", "introspect_sql"}
+
+
+async def test_generator_only_exposes_generator_tools(security_config):
+    """Generator toolset has exactly 3 generator-scoped tools."""
+    toolset = GeneratorToolset(config=security_config)
+    tools = await toolset.get_tools()
+    names = {t.name for t in tools}
+    assert names == {"generate_instance", "generate_batch", "generate_preview"}
+    # No other toolset tools
+    assert not names & {"catalog_list_schemas", "introspect_sql", "mapping_suggest"}
+
+
+async def test_validation_only_exposes_validation_tools(security_config):
+    """Validation toolset has exactly 3 validation-scoped tools."""
+    transport = httpx.MockTransport(lambda r: httpx.Response(200, json={}))
+    client = httpx.AsyncClient(transport=transport, base_url="https://test.local")
+    toolset = ValidationToolset(config=security_config, http_client=client)
+    tools = await toolset.get_tools()
+    names = {t.name for t in tools}
+    assert names == {"validate_instance", "sign_instance", "validate_batch"}
+    # No other toolset tools
+    assert not names & {"catalog_list_schemas", "introspect_sql", "generate_instance"}
 
 
 # --- SQL write rejection ---
@@ -139,7 +174,7 @@ async def test_unknown_csv_datasource_raises_keyerror(security_config):
 
 
 async def test_no_tool_name_overlap():
-    """Tool names across all toolsets are disjoint."""
+    """Tool names across all 5 toolsets are disjoint."""
     config = SDCAgentsConfig(
         sdcstudio={"base_url": "https://test.local"},
     )
@@ -149,12 +184,98 @@ async def test_no_tool_name_overlap():
     catalog = CatalogToolset(config=config, http_client=client)
     introspect = IntrospectToolset(config=config)
     mapping = MappingToolset(config=config)
+    generator = GeneratorToolset(config=config)
+    validation = ValidationToolset(config=config, http_client=client)
 
-    cat_names = {t.name for t in await catalog.get_tools()}
-    int_names = {t.name for t in await introspect.get_tools()}
-    map_names = {t.name for t in await mapping.get_tools()}
+    all_toolsets = {
+        "catalog": {t.name for t in await catalog.get_tools()},
+        "introspect": {t.name for t in await introspect.get_tools()},
+        "mapping": {t.name for t in await mapping.get_tools()},
+        "generator": {t.name for t in await generator.get_tools()},
+        "validation": {t.name for t in await validation.get_tools()},
+    }
+
+    # Verify expected counts
+    assert len(all_toolsets["catalog"]) == 5
+    assert len(all_toolsets["introspect"]) == 4
+    assert len(all_toolsets["mapping"]) == 3
+    assert len(all_toolsets["generator"]) == 3
+    assert len(all_toolsets["validation"]) == 3
 
     # All pairwise intersections are empty
-    assert not cat_names & int_names, "Catalog and Introspect tools overlap"
-    assert not cat_names & map_names, "Catalog and Mapping tools overlap"
-    assert not int_names & map_names, "Introspect and Mapping tools overlap"
+    names = list(all_toolsets.keys())
+    for i, a in enumerate(names):
+        for b in names[i + 1 :]:
+            overlap = all_toolsets[a] & all_toolsets[b]
+            assert not overlap, f"{a} and {b} tools overlap: {overlap}"
+
+
+# --- Validation path confinement ---
+
+
+async def test_validation_rejects_etc_passwd(security_config):
+    """Validation rejects /etc/passwd."""
+    transport = httpx.MockTransport(lambda r: httpx.Response(200, json={}))
+    client = httpx.AsyncClient(transport=transport, base_url="https://test.local")
+    toolset = ValidationToolset(config=security_config, http_client=client)
+
+    with pytest.raises(PermissionError, match="outside the output directory"):
+        await toolset.validate_instance(xml_path="/etc/passwd")
+
+
+async def test_validation_rejects_tmp_evil(security_config):
+    """Validation rejects /tmp/evil.xml."""
+    transport = httpx.MockTransport(lambda r: httpx.Response(200, json={}))
+    client = httpx.AsyncClient(transport=transport, base_url="https://test.local")
+    toolset = ValidationToolset(config=security_config, http_client=client)
+
+    with pytest.raises(PermissionError, match="outside the output directory"):
+        await toolset.validate_instance(xml_path="/tmp/evil.xml")
+
+
+async def test_validation_rejects_relative_traversal(security_config):
+    """Validation rejects relative path traversal."""
+    transport = httpx.MockTransport(lambda r: httpx.Response(200, json={}))
+    client = httpx.AsyncClient(transport=transport, base_url="https://test.local")
+    toolset = ValidationToolset(config=security_config, http_client=client)
+
+    output_dir = security_config.output.directory
+    traversal = f"{output_dir}/../../../etc/passwd"
+    with pytest.raises(PermissionError, match="outside the output directory"):
+        await toolset.validate_instance(xml_path=traversal)
+
+
+# --- Generator output directory confinement ---
+
+
+async def test_generator_writes_to_output_dir(security_config):
+    """Generator writes files only to the configured output directory."""
+    toolset = GeneratorToolset(config=security_config)
+    output_dir = Path(security_config.output.directory).resolve()
+    assert toolset._output_dir.resolve() == output_dir
+
+
+# --- VaaS token redaction in audit ---
+
+
+async def test_vaas_token_redacted_in_audit(security_config):
+    """VaaS API token is redacted in audit log entries."""
+    from sdc_agents.common.audit import AuditLogger
+
+    audit = AuditLogger(security_config.audit.path, security_config.audit.log_level)
+
+    # Simulate audit log with api_key in inputs
+    import time
+
+    audit.log(
+        agent="validation",
+        tool="validate_instance",
+        inputs={"xml_path": "/test.xml", "api_key": "test-secret-key"},
+        outputs={"valid": True},
+        start_time=time.monotonic(),
+    )
+
+    log_content = Path(security_config.audit.path).read_text()
+    record = json.loads(log_content.strip())
+    assert record["inputs"]["api_key"] == "***REDACTED***"
+    assert "test-secret-key" not in log_content

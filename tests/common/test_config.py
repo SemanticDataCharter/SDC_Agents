@@ -61,3 +61,60 @@ def test_defaults_applied():
     assert config.cache.ttl_hours == 24
     assert config.audit.log_level == "standard"
     assert config.output.directory == "./output"
+
+
+def test_sdcstudio_api_key():
+    """SDCStudio config supports optional api_key."""
+    config = SDCAgentsConfig(
+        sdcstudio={"base_url": "https://test.local", "api_key": "my-token"}
+    )
+    assert config.sdcstudio.api_key == "my-token"
+
+
+def test_sdcstudio_api_key_default_none():
+    """api_key defaults to None."""
+    config = SDCAgentsConfig()
+    assert config.sdcstudio.api_key is None
+
+
+def test_sdcstudio_toolbox_url():
+    """SDCStudio config supports optional toolbox_url."""
+    config = SDCAgentsConfig(
+        sdcstudio={"base_url": "https://test.local", "toolbox_url": "http://localhost:5000"}
+    )
+    assert config.sdcstudio.toolbox_url == "http://localhost:5000"
+
+
+def test_datasource_json_fields():
+    """JSON datasource fields are parsed correctly."""
+    config = SDCAgentsConfig(
+        datasources={
+            "records": {
+                "type": "json",
+                "path": "/data/records.json",
+                "jsonpath": "$.results[*]",
+            }
+        }
+    )
+    ds = config.datasources["records"]
+    assert ds.type == "json"
+    assert ds.path == "/data/records.json"
+    assert ds.jsonpath == "$.results[*]"
+
+
+def test_datasource_mongodb_fields():
+    """MongoDB datasource fields are parsed correctly."""
+    config = SDCAgentsConfig(
+        datasources={
+            "clinical": {
+                "type": "mongodb",
+                "connection_string": "mongodb://localhost:27017",
+                "database": "clinical",
+                "collection": "lab_results",
+            }
+        }
+    )
+    ds = config.datasources["clinical"]
+    assert ds.type == "mongodb"
+    assert ds.database == "clinical"
+    assert ds.collection == "lab_results"
