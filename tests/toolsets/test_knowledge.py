@@ -213,3 +213,136 @@ async def test_list_indexed_sources(knowledge_config, tmp_path):
     assert sources[0]["type"] == "json"
     assert sources[0]["chunks_indexed"] == 5
     assert sources[0]["status"] == "ready"
+
+
+# --- PDF/DOCX support ---
+
+
+@pytest.fixture
+def pdf_knowledge_config(tmp_path: Path) -> SDCAgentsConfig:
+    """Config with a PDF knowledge source."""
+    pdf_file = tmp_path / "policy.pdf"
+    pdf_file.write_bytes(b"fake pdf content")  # Will be mocked
+    return SDCAgentsConfig(
+        cache={"root": str(tmp_path / ".sdc-cache")},
+        audit={"path": str(tmp_path / "audit.jsonl")},
+        knowledge={
+            "vector_store": "chroma",
+            "vector_store_path": str(tmp_path / "chroma"),
+            "sources": {
+                "policy": {
+                    "type": "pdf",
+                    "path": str(pdf_file),
+                },
+            },
+        },
+    )
+
+
+@pytest.fixture
+def docx_knowledge_config(tmp_path: Path) -> SDCAgentsConfig:
+    """Config with a DOCX knowledge source."""
+    docx_file = tmp_path / "requirements.docx"
+    docx_file.write_bytes(b"fake docx content")  # Will be mocked
+    return SDCAgentsConfig(
+        cache={"root": str(tmp_path / ".sdc-cache")},
+        audit={"path": str(tmp_path / "audit.jsonl")},
+        knowledge={
+            "vector_store": "chroma",
+            "vector_store_path": str(tmp_path / "chroma"),
+            "sources": {
+                "requirements": {
+                    "type": "docx",
+                    "path": str(docx_file),
+                },
+            },
+        },
+    )
+
+
+async def test_ingest_pdf_source(pdf_knowledge_config):
+    """Ingest a PDF knowledge source with mocked pymupdf and Chroma."""
+    collection = _mock_collection()
+    mock_client = _mock_chroma_client(collection)
+
+    # Mock pymupdf page objects
+    mock_page1 = MagicMock()
+    mock_page1.get_text.return_value = "Chapter 1: Data Governance Policy. "
+    mock_page2 = MagicMock()
+    mock_page2.get_text.return_value = "Chapter 2: Data Quality Standards."
+
+    mock_doc = MagicMock()
+    mock_doc.__iter__ = MagicMock(return_value=iter([mock_page1, mock_page2]))
+    mock_doc.close = MagicMock()
+
+    mock_pymupdf = MagicMock()
+    mock_pymupdf.open.return_value = mock_doc
+
+    toolset = KnowledgeToolset(config=pdf_knowledge_config)
+
+    with (
+        patch("sdc_agents.toolsets.knowledge.pymupdf", mock_pymupdf),
+        patch("sdc_agents.toolsets.knowledge.chromadb") as mock_chromadb,
+    ):
+        mock_chromadb.PersistentClient = MagicMock(return_value=mock_client)
+        result = await toolset.ingest_knowledge_source("policy")
+
+    assert result["source_name"] == "policy"
+    assert result["type"] == "pdf"
+    assert result["status"] == "ready"
+    assert result["chunks_indexed"] > 0
+    collection.add.assert_called_once()
+    mock_doc.close.assert_called_once()
+
+
+async def test_ingest_docx_source(docx_knowledge_config):
+    """Ingest a DOCX knowledge source with mocked python-docx and Chroma."""
+    collection = _mock_collection()
+    mock_client = _mock_chroma_client(collection)
+
+    # Mock python-docx Document with paragraphs
+    mock_para1 = MagicMock()
+    mock_para1.text = "Section 1: Requirements Overview"
+    mock_para2 = MagicMock()
+    mock_para2.text = "Section 2: Functional Requirements"
+    mock_para_empty = MagicMock()
+    mock_para_empty.text = ""
+
+    mock_doc = MagicMock()
+    mock_doc.paragraphs = [mock_para1, mock_para_empty, mock_para2]
+
+    mock_python_docx = MagicMock()
+    mock_python_docx.Document.return_value = mock_doc
+
+    toolset = KnowledgeToolset(config=docx_knowledge_config)
+
+    with (
+        patch("sdc_agents.toolsets.knowledge.python_docx", mock_python_docx),
+        patch("sdc_agents.toolsets.knowledge.chromadb") as mock_chromadb,
+    ):
+        mock_chromadb.PersistentClient = MagicMock(return_value=mock_client)
+        result = await toolset.ingest_knowledge_source("requirements")
+
+    assert result["source_name"] == "requirements"
+    assert result["type"] == "docx"
+    assert result["status"] == "ready"
+    assert result["chunks_indexed"] > 0
+    collection.add.assert_called_once()
+
+
+async def test_pdf_missing_pymupdf_raises(pdf_knowledge_config):
+    """Missing pymupdf raises ImportError with install message."""
+    toolset = KnowledgeToolset(config=pdf_knowledge_config)
+
+    with patch("sdc_agents.toolsets.knowledge.pymupdf", None):
+        with pytest.raises(ImportError, match="pymupdf is required"):
+            await toolset.ingest_knowledge_source("policy")
+
+
+async def test_docx_missing_python_docx_raises(docx_knowledge_config):
+    """Missing python-docx raises ImportError with install message."""
+    toolset = KnowledgeToolset(config=docx_knowledge_config)
+
+    with patch("sdc_agents.toolsets.knowledge.python_docx", None):
+        with pytest.raises(ImportError, match="python-docx is required"):
+            await toolset.ingest_knowledge_source("requirements")

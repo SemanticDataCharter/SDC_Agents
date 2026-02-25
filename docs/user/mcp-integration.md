@@ -1,6 +1,8 @@
 # MCP Integration
 
-Each SDC Agents toolset can be served as an [MCP](https://modelcontextprotocol.io/) stdio server, allowing non-ADK clients to use the tools. The `sdc-agents serve --mcp <agent>` command converts ADK `FunctionTool` instances to MCP tool types via `adk_to_mcp_tool_type()` and serves them over stdio.
+Eight of nine SDC Agents toolsets can be served as [MCP](https://modelcontextprotocol.io/) stdio servers, allowing non-ADK clients to use the tools. The `sdc-agents serve --mcp <agent>` command converts ADK `FunctionTool` instances to MCP tool types via `adk_to_mcp_tool_type()` and serves them over stdio.
+
+> **Note:** The **Semantic Discovery Agent** is ADK-native only and cannot be served via MCP. ADK's `VertexAiSearchTool` requires a non-None `ToolContext` for `run_async()`, which is incompatible with the MCP stdio adapter's `tool_context=None` pattern. Use this agent through the ADK API directly.
 
 ---
 
@@ -174,7 +176,7 @@ Which agents to configure for common workflows:
 | Explore a datasource | `introspect` |
 | Map columns to schema components | `catalog` + `introspect` + `mapping` |
 | Generate XML from CSV | `catalog` + `introspect` + `mapping` + `generator` |
-| Full pipeline (generate + validate + distribute) | All 8 agents |
+| Full pipeline (generate + validate + distribute) | All 8 MCP agents (+ semantic_discovery ADK-only) |
 | Validate existing XML files | `validation` |
 | Distribute existing packages | `distribution` |
 | Bootstrap a triplestore | `catalog` + `distribution` |
@@ -193,6 +195,7 @@ When you connect an MCP server, the client sees only that agent's tools:
 | `sdc-generator` | `generate_instance`, `generate_batch`, `generate_preview` |
 | `sdc-validation` | `validate_instance`, `sign_instance`, `validate_batch` |
 | `sdc-distribution` | `inspect_package`, `list_destinations`, `distribute_package`, `distribute_batch`, `bootstrap_triplestore` |
+| *(Semantic Discovery)* | `vertex_ai_search` — **ADK-only**, not available via MCP |
 
 For full tool documentation, see the [Agent & Tool Reference](tool-reference.md).
 

@@ -253,7 +253,7 @@ def info(ctx: click.Context) -> None:
     click.echo()
 
     # Agent inventory with tool counts
-    click.echo("Agents (8):")
+    click.echo("Agents (9):")
     tool_counts = {
         "assembly": 4,
         "catalog": 5,
@@ -262,11 +262,14 @@ def info(ctx: click.Context) -> None:
         "introspect": 5,
         "knowledge": 3,
         "mapping": 3,
+        "semantic_discovery": 1,
         "validation": 3,
     }
     for name in sorted(AGENT_REGISTRY):
         count = tool_counts.get(name, "?")
         click.echo(f"  {name:16s} {count} tools")
+    sd_count = tool_counts["semantic_discovery"]
+    click.echo(f"  {'semantic_discovery':16s} {sd_count} tools  (ADK-only)")
     click.echo()
 
     # Datasources

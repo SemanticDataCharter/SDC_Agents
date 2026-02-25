@@ -141,7 +141,7 @@ Each source entry:
 
 | Field | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `type` | str | Yes | — | Source type: `csv`, `json`, `ttl`, `markdown`, or `txt` |
+| `type` | str | Yes | — | Source type: `csv`, `json`, `ttl`, `markdown`, `txt`, `pdf`, or `docx` |
 | `path` | str | Yes | — | File path to the knowledge source |
 
 **Example:**
@@ -160,6 +160,36 @@ knowledge:
     domain_ontology:
       type: "ttl"
       path: "/data/ontologies/domain.ttl"
+```
+
+### `vertex_ai_search`
+
+Vertex AI Search configuration for the Semantic Discovery Agent (ADK-native only, no MCP export). Requires `google-cloud-aiplatform` (`pip install sdc-agents[vertex-ai-search]`) and GCP Application Default Credentials.
+
+| Field | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `enabled` | bool | No | `false` | Enable the Semantic Discovery Agent |
+| `data_store_id` | str | No | `null` | Vertex AI Search data store resource path |
+| `search_engine_id` | str | No | `null` | Vertex AI Search engine resource path (alternative to data_store_id) |
+| `filter` | str | No | `null` | Optional filter expression for search queries |
+| `max_results` | int | No | `10` | Maximum number of search results to return |
+
+When `enabled: true`, either `data_store_id` or `search_engine_id` must be provided.
+
+**Example:**
+
+```yaml
+vertex_ai_search:
+  enabled: true
+  data_store_id: "projects/my-project/locations/global/collections/default_collection/dataStores/my-store"
+  max_results: 10
+```
+
+**GCP Authentication:**
+
+```bash
+gcloud auth application-default login
+# or set GOOGLE_APPLICATION_CREDENTIALS to a service account key file
 ```
 
 ### `datasources`
@@ -281,7 +311,7 @@ destinations:
     create_directories: true
 ```
 
-This enables 6 agents: Catalog discovery, Introspect from CSV + SQL, Mapping, Generation, Validation + signing via VaaS, and Distribution to Fuseki + filesystem archive. Add `knowledge:` and `sdcstudio.default_library_project` to enable the Knowledge and Assembly agents (8 agents total).
+This enables 6 agents: Catalog discovery, Introspect from CSV + SQL, Mapping, Generation, Validation + signing via VaaS, and Distribution to Fuseki + filesystem archive. Add `knowledge:` and `sdcstudio.default_library_project` to enable the Knowledge and Assembly agents. Add `vertex_ai_search:` to enable the Semantic Discovery Agent (9 agents total).
 
 ---
 

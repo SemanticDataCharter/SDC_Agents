@@ -1,6 +1,6 @@
 # SDC Agents User Documentation
 
-SDC Agents is an open-source suite of eight purpose-scoped agents built on Google's [Agent Development Kit (ADK)](https://google.github.io/adk-docs/) that transform data from SQL databases, CSV files, JSON sources, and MongoDB collections into validated, multi-format SDC4 artifacts — without requiring the user to write XML, RDF, or GQL by hand.
+SDC Agents is an open-source suite of nine purpose-scoped agents built on Google's [Agent Development Kit (ADK)](https://google.github.io/adk-docs/) that transform data from SQL databases, CSV files, JSON sources, and MongoDB collections into validated, multi-format SDC4 artifacts — without requiring the user to write XML, RDF, or GQL by hand.
 
 For installation and quick start, see the [README](../../README.md#quick-start).
 
@@ -74,6 +74,15 @@ For installation and quick start, see the [README](../../README.md#quick-start).
 │ context into     │────▶│ components, builds │
 │ vector store     │     │ & publishes models │
 └──────────────────┘     └────────────────────┘
+
+┌────────────────────────────┐
+│ Semantic Discovery Agent   │
+│        (1 tool)            │
+│        (ADK-only)          │
+│                            │
+│ Searches Vertex AI Search  │
+│ for relevant SDC4 resources│
+└────────────────────────────┘
 ```
 
 Each agent communicates through **files on disk** (the `.sdc-cache/` directory and `./output/`), not direct calls. Every handoff is an inspectable, version-controllable artifact.
@@ -82,7 +91,7 @@ Each agent communicates through **files on disk** (the `.sdc-cache/` directory a
 
 ## Security Model
 
-1. **No agent has both datasource access and network access.** The Introspect Agent reads your data but has no network. The Catalog and Validation Agents access the network but never touch your datasources.
+1. **No agent has both datasource access and network access.** The Introspect Agent reads your data but has no network. The Catalog and Validation Agents access the network but never touch your datasources. The Semantic Discovery Agent accesses GCP Vertex AI Search but never touches datasources.
 2. **Read-only datasource access.** SQL queries are restricted to SELECT. CSV and JSON files are read, never modified. MongoDB access uses `find()` only.
 3. **Append-only audit log.** Every tool call is logged to `.sdc-cache/audit.jsonl` with agent name, tool name, inputs, outputs, timestamp, and duration. Credentials are automatically redacted.
 
@@ -118,7 +127,7 @@ The cache root defaults to `.sdc-cache` but is configurable via the `cache.root`
 | Document | Description |
 |---|---|
 | **[Configuration Reference](configuration.md)** | All config fields, annotated YAML, environment variable substitution, working examples |
-| **[Agent & Tool Reference](tool-reference.md)** | All 31 tools across 8 agents — parameters, return shapes, access scopes |
+| **[Agent & Tool Reference](tool-reference.md)** | All 32 tools across 9 agents — parameters, return shapes, access scopes |
 | **[MCP Integration](mcp-integration.md)** | Serve agents as MCP servers for Claude Desktop, Cursor, and generic stdio clients |
 | **[Common Workflows](workflows.md)** | Step-by-step guides: CSV to validated XML, audit troubleshooting, triplestore bootstrap |
 
