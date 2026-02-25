@@ -40,6 +40,15 @@ Each agent is an ADK `LlmAgent` with a narrowly scoped `BaseToolset`, auditable 
 5. **No credential sharing** — each `BaseToolset` receives only its own credential scope
 6. **Fail closed** — errors are returned, never retried with escalated privileges
 
+### IEEE 7000-2021 Alignment
+
+SDC Agents is designed consistent with [IEEE 7000-2021](https://standards.ieee.org/ieee/7000/6781/) Value-based Engineering principles for ethical autonomous system design:
+
+- **Transparency** — append-only structured audit log records every tool invocation with agent, tool, inputs, outputs, timestamp, and duration
+- **Traceability** — all inter-agent handoffs are inspectable files on disk (`.sdc-cache/`), not opaque in-memory calls
+- **Harm minimization** — purpose-scoped isolation ensures no single agent can access both customer datasources and external networks; blast radius is confined to each agent's scope
+- **Stakeholder value preservation** — SDC4's curated, constraint-based semantic model (`xsd:restriction` only, immutable schemas) encodes data integrity and endurance as system-level guarantees, not optional features
+
 ### Data Flow
 
 Agents communicate through **files on disk**, not direct calls. Every handoff is an inspectable, version-controllable artifact:
