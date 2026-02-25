@@ -132,7 +132,7 @@ Agents (6):
   catalog          5 tools
   distribution     5 tools
   generator        3 tools
-  introspect       4 tools
+  introspect       5 tools
   mapping          3 tools
   validation       3 tools
 

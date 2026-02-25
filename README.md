@@ -279,7 +279,7 @@ pytest tests/security/
 
 **CatalogToolset** (5 tools): `catalog_list_schemas`, `catalog_get_schema`, `catalog_download_schema_rdf`, `catalog_download_skeleton`, `catalog_download_ontologies` — httpx async, cache-first for immutable schemas
 
-**IntrospectToolset** (4 tools): `introspect_sql` (SELECT-only enforcement), `introspect_csv` (type inference for 10 types), `introspect_json` (JSONPath extraction), `introspect_mongodb` (BSON-to-SDC4 type mapping)
+**IntrospectToolset** (5 tools): `introspect_sql` (SELECT-only enforcement), `introspect_csv` (type inference for 10 types), `introspect_json` (JSONPath extraction), `introspect_mongodb` (BSON-to-SDC4 type mapping), `introspect_bigquery` (BigQuery schema extraction via `asyncio.to_thread`)
 
 **MappingToolset** (3 tools): `mapping_suggest` (type compatibility + name similarity), `mapping_confirm`, `mapping_list`
 
@@ -291,7 +291,7 @@ pytest tests/security/
 
 **Agent factories**: `create_catalog_agent()`, `create_introspect_agent()`, `create_mapping_agent()`, `create_generator_agent()`, `create_validation_agent()`, `create_distribution_agent()`
 
-**143 tests, 82% coverage** — 6 toolsets with 23 disjoint tools, security isolation tests (SQL write rejection, datasource name enforcement, path confinement, credential redaction, no cross-scope tool leakage)
+**159 tests, 82% coverage** — 6 toolsets with 24 disjoint tools, security isolation tests (SQL write rejection, datasource name enforcement, path confinement, credential redaction, no cross-scope tool leakage)
 
 **Consumer-first**: all tests use `httpx.MockTransport` — zero live SDCStudio, Fuseki, or Neo4j dependency
 

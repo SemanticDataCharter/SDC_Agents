@@ -106,7 +106,7 @@ aligned with SDC Generation 4.
 ### Completed — Phase 2: Generation and Validation
 - **Generator Agent**: `GeneratorToolset` with `generate_instance`, `generate_batch`, `generate_preview` — skeleton-based XML generation with placeholder substitution and optional element pruning
 - **Validation Agent**: `ValidationToolset` with `validate_instance`, `sign_instance`, `validate_batch` — VaaS API integration with path confinement, token auth, artifact package (.pkg.zip) support
-- **Introspect Agent extensions**: 2→4 tools — `introspect_json` (JSONPath extraction), `introspect_mongodb` (BSON-to-SDC4 type mapping)
+- **Introspect Agent extensions**: 2→4 tools — `introspect_json` (JSONPath extraction), `introspect_mongodb` (BSON-to-SDC4 type mapping). Subsequently extended to 5 tools with `introspect_bigquery`.
 - Config additions: `api_key`, `toolbox_url`, `jsonpath`, `database`, `collection`
 - Cache additions: `skeleton_path()`, `field_mapping_path()`
 - Dependencies: motor>=3.6, jsonpath-ng>=1.6, mongomock (dev), toolbox-adk (optional)
@@ -122,14 +122,14 @@ aligned with SDC Generation 4.
 - Filesystem connector (path pattern substitution with optional directory creation)
 - Destination health checks (`list_destinations` with per-destination connectivity probes)
 - httpx-only connectors — no neo4j-driver dependency; per-artifact failure isolation
-- 143 tests (28 new), 2 skipped. Security: 6 toolsets disjoint (5+4+3+3+3+5 = 23 total tools), Distribution path confinement, destination credential redaction
+- 143 tests (28 new), 2 skipped. Security: 6 toolsets disjoint (5+5+3+3+3+5 = 24 total tools), Distribution path confinement, destination credential redaction
 - Implementation: regular `FunctionTool` for batch (not `LongRunningFunctionTool`), httpx `MockTransport` for all connectors
 
 ### Completed — Phase 4: Production Hardening
 - **CLI**: `sdc-agents` command with 4 subcommands:
   - `sdc-agents serve --mcp <agent>` — start any agent toolset as an MCP stdio server
   - `sdc-agents audit show` — inspect structured audit log with `--agent`, `--tool`, `--last`, `--limit` filters
-  - `sdc-agents info` — display config summary, agent inventory (6 agents, 23 tools), datasources, and destinations
+  - `sdc-agents info` — display config summary, agent inventory (6 agents, 24 tools), datasources, and destinations
   - `sdc-agents validate-config` — validate YAML config and report Pydantic errors
 - **PyPI metadata**: `[project.scripts]` entry point, `[project.urls]` (Repository, Documentation, Issues, Changelog), keywords, updated classifiers (removed stale Django, added Python 3.13, Typed)
 - 12 new CLI tests using `click.testing.CliRunner` (in-process, no subprocess)
@@ -141,7 +141,7 @@ aligned with SDC Generation 4.
 - **User documentation suite** (`docs/user/`):
   - `index.md` — entry point with pipeline diagram, security model, cache structure
   - `configuration.md` — full config reference with annotated YAML, field tables, env var docs, minimal examples
-  - `tool-reference.md` — all 23 tools across 6 agents with parameter tables and return shapes
+  - `tool-reference.md` — all 24 tools across 6 agents with parameter tables and return shapes
   - `mcp-integration.md` — MCP server setup for Claude Desktop, Cursor, and generic stdio clients
   - `workflows.md` — step-by-step guides for CSV-to-XML, audit/troubleshooting, triplestore bootstrap
 
