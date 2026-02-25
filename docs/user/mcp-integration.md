@@ -190,11 +190,13 @@ When you connect an MCP server, the client sees only that agent's tools:
 | MCP Server | Tools Exposed |
 |---|---|
 | `sdc-catalog` | `catalog_list_schemas`, `catalog_get_schema`, `catalog_download_schema_rdf`, `catalog_download_skeleton`, `catalog_download_ontologies` |
-| `sdc-introspect` | `introspect_sql`, `introspect_csv`, `introspect_json`, `introspect_mongodb` |
+| `sdc-introspect` | `introspect_sql`, `introspect_csv`, `introspect_json`, `introspect_mongodb`, `introspect_bigquery` |
 | `sdc-mapping` | `mapping_suggest`, `mapping_confirm`, `mapping_list` |
 | `sdc-generator` | `generate_instance`, `generate_batch`, `generate_preview` |
 | `sdc-validation` | `validate_instance`, `sign_instance`, `validate_batch` |
 | `sdc-distribution` | `inspect_package`, `list_destinations`, `distribute_package`, `distribute_batch`, `bootstrap_triplestore` |
+| `sdc-knowledge` | `ingest_knowledge_source`, `query_knowledge`, `list_indexed_sources` |
+| `sdc-assembly` | `discover_components`, `propose_cluster_hierarchy`, `select_contextual_components`, `assemble_model` |
 | *(Semantic Discovery)* | `vertex_ai_search` — **ADK-only**, not available via MCP |
 
 For full tool documentation, see the [Agent & Tool Reference](tool-reference.md).
