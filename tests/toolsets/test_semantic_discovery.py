@@ -15,9 +15,7 @@ def _enabled_config() -> SDCAgentsConfig:
     return SDCAgentsConfig(
         vertex_ai_search={
             "enabled": True,
-            "data_store_id": (
-                "projects/test/locations/global/dataStores/test-store"
-            ),
+            "data_store_id": ("projects/test/locations/global/dataStores/test-store"),
             "max_results": 5,
         },
     )
@@ -25,9 +23,7 @@ def _enabled_config() -> SDCAgentsConfig:
 
 def test_get_tools_returns_one():
     """SemanticDiscoveryToolset exposes exactly 1 tool."""
-    with patch(
-        "sdc_agents.toolsets.semantic_discovery.VertexAiSearchTool"
-    ) as MockVAS:
+    with patch("sdc_agents.toolsets.semantic_discovery.VertexAiSearchTool") as MockVAS:
         mock_tool = MagicMock()
         mock_tool.name = "vertex_ai_search"
         MockVAS.return_value = mock_tool

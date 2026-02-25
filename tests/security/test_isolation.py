@@ -251,14 +251,10 @@ async def test_semantic_discovery_only_exposes_search_tool():
         sdcstudio={"base_url": "https://test.local"},
         vertex_ai_search={
             "enabled": True,
-            "data_store_id": (
-                "projects/test/locations/global/dataStores/test"
-            ),
+            "data_store_id": ("projects/test/locations/global/dataStores/test"),
         },
     )
-    with patch(
-        "sdc_agents.toolsets.semantic_discovery.VertexAiSearchTool"
-    ) as MockVAS:
+    with patch("sdc_agents.toolsets.semantic_discovery.VertexAiSearchTool") as MockVAS:
         mock_tool = MagicMock()
         mock_tool.name = "vertex_ai_search"
         MockVAS.return_value = mock_tool
@@ -286,9 +282,7 @@ async def test_no_tool_name_overlap():
         sdcstudio={"base_url": "https://test.local"},
         vertex_ai_search={
             "enabled": True,
-            "data_store_id": (
-                "projects/test/locations/global/dataStores/test"
-            ),
+            "data_store_id": ("projects/test/locations/global/dataStores/test"),
         },
     )
     transport = httpx.MockTransport(lambda r: httpx.Response(200, json=[]))
@@ -315,9 +309,7 @@ async def test_no_tool_name_overlap():
     }
 
     # Semantic discovery needs mocked VertexAiSearchTool
-    with patch(
-        "sdc_agents.toolsets.semantic_discovery.VertexAiSearchTool"
-    ) as MockVAS:
+    with patch("sdc_agents.toolsets.semantic_discovery.VertexAiSearchTool") as MockVAS:
         mock_tool = MagicMock()
         mock_tool.name = "vertex_ai_search"
         MockVAS.return_value = mock_tool
