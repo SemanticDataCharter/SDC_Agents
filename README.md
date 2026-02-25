@@ -178,7 +178,7 @@ sdc-agents serve --mcp catalog
 # Start the Introspect Agent as an MCP server
 sdc-agents serve --mcp introspect
 
-# Any of the 6 agents: catalog, distribution, generator, introspect, mapping, validation
+# Any of the 8 agents: assembly, catalog, distribution, generator, introspect, knowledge, mapping, validation
 sdc-agents serve --mcp validation
 ```
 
@@ -202,7 +202,7 @@ sdc-agents audit show --audit-path ./logs/audit.jsonl  # custom path
 
 ### Docker
 
-A single image serves all 6 agents. Select the agent at runtime with `SDC_AGENT`:
+A single image serves all 8 agents. Select the agent at runtime with `SDC_AGENT`:
 
 ```bash
 # Serve a single agent as an MCP server

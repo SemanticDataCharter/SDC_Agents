@@ -1,0 +1,90 @@
+name: Bug Report
+description: Report a bug in SDC Agents
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Please fill out the sections below so we can reproduce and fix the issue.
+
+  - type: input
+    id: version
+    attributes:
+      label: SDC Agents version
+      description: Output of `pip show sdc-agents | grep Version` or `sdc-agents --version`
+      placeholder: "4.0.0"
+    validations:
+      required: true
+
+  - type: input
+    id: python
+    attributes:
+      label: Python version
+      description: Output of `python --version`
+      placeholder: "3.12.x"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: agent
+    attributes:
+      label: Which agent is affected?
+      options:
+        - Catalog
+        - Introspect
+        - Mapping
+        - Generator
+        - Validation
+        - Distribution
+        - CLI / shared infrastructure
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: A clear description of the bug.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps or code to reproduce the issue.
+      placeholder: |
+        1. Configure datasource ...
+        2. Run `sdc-agents serve --mcp introspect`
+        3. Call tool ...
+        4. See error ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error output / logs
+      description: Paste any error messages, tracebacks, or audit log entries. Redact credentials.
+      render: text
+
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Environment
+      options:
+        - Local (pip install)
+        - Docker (GHCR image)
+        - Cloud Run
+        - Other
+    validations:
+      required: true

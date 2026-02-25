@@ -40,7 +40,16 @@ def test_serve_lists_valid_agents():
     """Error message for invalid agent includes valid agent names."""
     result = CliRunner().invoke(main, ["serve", "--mcp", "bogus"])
     assert result.exit_code != 0
-    for name in ("catalog", "introspect", "mapping", "generator", "validation", "distribution"):
+    for name in (
+        "assembly",
+        "catalog",
+        "distribution",
+        "generator",
+        "introspect",
+        "knowledge",
+        "mapping",
+        "validation",
+    ):
         assert name in result.output
 
 
@@ -147,8 +156,10 @@ def test_info_loads_config():
     assert result.exit_code == 0
     assert "catalog" in result.output
     assert "introspect" in result.output
+    assert "knowledge" in result.output
+    assert "assembly" in result.output
     assert "test_triplestore" in result.output or "test_archive" in result.output
-    assert "Agents (6)" in result.output
+    assert "Agents (8)" in result.output
 
 
 def test_validate_config_success():

@@ -47,6 +47,7 @@ class SDCStudioConfig(BaseModel):
     base_url: str = "https://sdcstudio.example.com"
     api_key: Optional[str] = None  # VaaS token (Validation Agent only)
     toolbox_url: Optional[str] = None  # MCP Toolbox server URL (optional)
+    default_library_project: Optional[str] = None  # Default project for contextual components
 
 
 class CacheConfig(BaseModel):
@@ -98,6 +99,21 @@ class OutputConfig(BaseModel):
     formats: list[str] = Field(default_factory=lambda: ["xml"])
 
 
+class KnowledgeSourceConfig(BaseModel):
+    """A single knowledge source definition."""
+
+    type: Literal["csv", "json", "ttl", "markdown", "txt"]
+    path: str
+
+
+class KnowledgeConfig(BaseModel):
+    """Knowledge index settings."""
+
+    vector_store: Literal["chroma"] = "chroma"
+    vector_store_path: str = ".sdc-cache/knowledge/"
+    sources: Dict[str, KnowledgeSourceConfig] = Field(default_factory=dict)
+
+
 class SDCAgentsConfig(BaseModel):
     """Top-level configuration for SDC Agents."""
 
@@ -107,6 +123,7 @@ class SDCAgentsConfig(BaseModel):
     datasources: Dict[str, DatasourceConfig] = Field(default_factory=dict)
     output: OutputConfig = Field(default_factory=OutputConfig)
     destinations: Dict[str, DestinationConfig] = Field(default_factory=dict)
+    knowledge: KnowledgeConfig = Field(default_factory=KnowledgeConfig)
 
 
 def load_config(path: str | Path) -> SDCAgentsConfig:

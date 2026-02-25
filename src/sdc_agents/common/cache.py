@@ -12,7 +12,7 @@ from pathlib import Path
 class CacheManager:
     """Manages the .sdc-cache directory structure and file lookups."""
 
-    SUBDIRS = ("schemas", "ontologies", "introspections", "mappings")
+    SUBDIRS = ("schemas", "ontologies", "introspections", "mappings", "knowledge")
 
     def __init__(self, root: str | Path = ".sdc-cache"):
         self._root = Path(root)
@@ -49,6 +49,10 @@ class CacheManager:
     def field_mapping_path(self, ct_id: str) -> Path:
         """Path where a field mapping JSON would be cached."""
         return self._root / "schemas" / f"{ct_id}_field_mapping.json"
+
+    def knowledge_path(self, source_name: str) -> Path:
+        """Path where knowledge source metadata would be cached."""
+        return self._root / "knowledge" / f"{source_name}.json"
 
     def is_cached(self, path: Path) -> bool:
         """Check whether a cached file exists and is non-empty."""

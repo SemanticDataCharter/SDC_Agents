@@ -1,0 +1,61 @@
+name: Feature Request
+description: Suggest a new feature or enhancement
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an improvement. Please describe the feature and its motivation.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which area does this relate to?
+      options:
+        - Catalog Agent / toolset
+        - Introspect Agent / toolset
+        - Mapping Agent / toolset
+        - Generator Agent / toolset
+        - Validation Agent / toolset
+        - Distribution Agent / toolset
+        - CLI
+        - Configuration
+        - Documentation
+        - New agent or toolset
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or motivation
+      description: What problem does this solve, or what workflow does it improve?
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: How should this work? Include examples, config snippets, or tool signatures if applicable.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any other approaches you considered and why this one is better.
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Scope
+      description: How large is this change?
+      options:
+        - Small (single tool or config field)
+        - Medium (new tool or toolset changes)
+        - Large (new agent, architecture change)
+    validations:
+      required: true

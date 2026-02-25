@@ -17,12 +17,14 @@ from pathlib import Path
 import click
 
 AGENT_REGISTRY: dict[str, tuple[str, str]] = {
+    "assembly": ("sdc_agents.toolsets.assembly", "AssemblyToolset"),
     "catalog": ("sdc_agents.toolsets.catalog", "CatalogToolset"),
-    "introspect": ("sdc_agents.toolsets.introspect", "IntrospectToolset"),
-    "mapping": ("sdc_agents.toolsets.mapping", "MappingToolset"),
-    "generator": ("sdc_agents.toolsets.generator", "GeneratorToolset"),
-    "validation": ("sdc_agents.toolsets.validation", "ValidationToolset"),
     "distribution": ("sdc_agents.toolsets.distribution", "DistributionToolset"),
+    "generator": ("sdc_agents.toolsets.generator", "GeneratorToolset"),
+    "introspect": ("sdc_agents.toolsets.introspect", "IntrospectToolset"),
+    "knowledge": ("sdc_agents.toolsets.knowledge", "KnowledgeToolset"),
+    "mapping": ("sdc_agents.toolsets.mapping", "MappingToolset"),
+    "validation": ("sdc_agents.toolsets.validation", "ValidationToolset"),
 }
 
 _VALID_AGENTS = ", ".join(sorted(AGENT_REGISTRY))
@@ -251,14 +253,16 @@ def info(ctx: click.Context) -> None:
     click.echo()
 
     # Agent inventory with tool counts
-    click.echo("Agents (6):")
+    click.echo("Agents (8):")
     tool_counts = {
+        "assembly": 4,
         "catalog": 5,
-        "introspect": 5,
-        "mapping": 3,
-        "generator": 3,
-        "validation": 3,
         "distribution": 5,
+        "generator": 3,
+        "introspect": 5,
+        "knowledge": 3,
+        "mapping": 3,
+        "validation": 3,
     }
     for name in sorted(AGENT_REGISTRY):
         count = tool_counts.get(name, "?")

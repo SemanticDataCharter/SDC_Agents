@@ -12,6 +12,7 @@ sdcstudio:
   base_url: "https://sdcstudio.example.com"   # Required. Catalog + VaaS API base URL.
   api_key: "${SDC_API_KEY}"                    # Optional. VaaS token (Validation Agent only).
   toolbox_url: "http://localhost:5000"         # Optional. MCP Toolbox server for SQL adapters.
+  default_library_project: "SDC4-Core"         # Optional. Default project for contextual components.
 
 # Local cache settings
 cache:
@@ -48,6 +49,18 @@ datasources:
     dataset: "clinical_data"                      # BigQuery dataset name
 
   # Cloud data platforms — use type: sql with the platform's SQLAlchemy driver
+
+# Knowledge sources — customer contextual resources (pip install sdc-agents[knowledge])
+knowledge:
+  vector_store: "chroma"
+  vector_store_path: ".sdc-cache/knowledge/"
+  sources:
+    data_dictionary:
+      type: "markdown"
+      path: "/data/docs/data_dictionary.md"
+    glossary:
+      type: "json"
+      path: "/data/docs/glossary.json"
   snowflake_warehouse:
     type: "sql"
     connection_string: "snowflake://${SNOWFLAKE_USER}:${SNOWFLAKE_PASSWORD}@${SNOWFLAKE_ACCOUNT}/${SNOWFLAKE_DATABASE}/${SNOWFLAKE_SCHEMA}?warehouse=${SNOWFLAKE_WAREHOUSE}"
@@ -98,6 +111,7 @@ destinations:
 | `base_url` | str | Yes | `https://sdcstudio.example.com` | SDCStudio Catalog and VaaS API base URL |
 | `api_key` | str | No | `null` | VaaS API token. Only needed by the Validation Agent. |
 | `toolbox_url` | str | No | `null` | MCP Toolbox server URL for extended SQL adapters (optional) |
+| `default_library_project` | str | No | `null` | Default project for contextual component discovery (Assembly Agent) |
 
 ### `cache`
 
@@ -112,6 +126,41 @@ destinations:
 |---|---|---|---|---|
 | `path` | str | No | `.sdc-cache/audit.jsonl` | Path to the append-only JSONL audit log |
 | `log_level` | str | No | `standard` | `standard` summarizes outputs; `verbose` logs full payloads |
+
+### `knowledge`
+
+Knowledge index settings for the Knowledge Agent. Requires `chromadb` (`pip install sdc-agents[knowledge]`).
+
+| Field | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `vector_store` | str | No | `chroma` | Vector store backend (currently only `chroma`) |
+| `vector_store_path` | str | No | `.sdc-cache/knowledge/` | Path for Chroma persistent storage |
+| `sources` | dict | No | `{}` | Named knowledge source definitions |
+
+Each source entry:
+
+| Field | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `type` | str | Yes | — | Source type: `csv`, `json`, `ttl`, `markdown`, or `txt` |
+| `path` | str | Yes | — | File path to the knowledge source |
+
+**Example:**
+
+```yaml
+knowledge:
+  vector_store: "chroma"
+  vector_store_path: ".sdc-cache/knowledge/"
+  sources:
+    data_dictionary:
+      type: "markdown"
+      path: "/data/docs/data_dictionary.md"
+    glossary:
+      type: "json"
+      path: "/data/docs/glossary.json"
+    domain_ontology:
+      type: "ttl"
+      path: "/data/ontologies/domain.ttl"
+```
 
 ### `datasources`
 
@@ -232,7 +281,7 @@ destinations:
     create_directories: true
 ```
 
-This enables all 6 agents: Catalog discovery, Introspect from CSV + SQL, Mapping, Generation, Validation + signing via VaaS, and Distribution to Fuseki + filesystem archive.
+This enables 6 agents: Catalog discovery, Introspect from CSV + SQL, Mapping, Generation, Validation + signing via VaaS, and Distribution to Fuseki + filesystem archive. Add `knowledge:` and `sdcstudio.default_library_project` to enable the Knowledge and Assembly agents (8 agents total).
 
 ---
 
