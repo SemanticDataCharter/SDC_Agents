@@ -1,11 +1,12 @@
 """Introspect Toolset — read-only datasource structure extraction.
 
-Provides SQL (SELECT-only), CSV, JSON, and MongoDB introspection tools.
+Provides SQL (SELECT-only), CSV, JSON, MongoDB, and BigQuery introspection tools.
 No network access, no file system writes.
 """
 
 from __future__ import annotations
 
+import asyncio
 import csv
 import io
 import json
@@ -59,6 +60,29 @@ _BSON_TYPE_MAP = {
     "null": "null",
     "binData": "binary",
     "regex": "string",
+}
+
+# BigQuery schema type to inferred type mapping
+_BIGQUERY_TYPE_MAP = {
+    "STRING": "string",
+    "INT64": "integer",
+    "INTEGER": "integer",
+    "FLOAT64": "decimal",
+    "FLOAT": "decimal",
+    "NUMERIC": "decimal",
+    "BIGNUMERIC": "decimal",
+    "BOOL": "boolean",
+    "BOOLEAN": "boolean",
+    "DATE": "date",
+    "DATETIME": "datetime",
+    "TIMESTAMP": "datetime",
+    "TIME": "time",
+    "BYTES": "string",
+    "JSON": "object",
+    "STRUCT": "object",
+    "RECORD": "object",
+    "ARRAY": "array",
+    "GEOGRAPHY": "string",
 }
 
 
@@ -160,6 +184,7 @@ class IntrospectToolset(BaseToolset):
             FunctionTool(self.introspect_csv),
             FunctionTool(self.introspect_json),
             FunctionTool(self.introspect_mongodb),
+            FunctionTool(self.introspect_bigquery),
         ]
         if readonly_context and self.tool_filter:
             return [t for t in tools if self._is_tool_selected(t, readonly_context)]
@@ -489,6 +514,134 @@ class IntrospectToolset(BaseToolset):
                 "datasource_name": datasource_name,
                 "collection": coll_name,
                 "sample_size": sample_size,
+            },
+            outputs=result,
+            start_time=start,
+        )
+        return result
+
+    async def introspect_bigquery(
+        self,
+        datasource_name: str,
+        dataset: Optional[str] = None,
+        table: Optional[str] = None,
+        max_rows: int = 100,
+    ) -> dict:
+        """Introspect a BigQuery dataset or table to discover structure and types.
+
+        Read-only: uses list_rows and schema access only.
+
+        Args:
+            datasource_name: Name of a configured BigQuery datasource (from config).
+            dataset: Dataset name. Overrides config-level dataset if provided.
+            table: Table name. If omitted, lists all tables in the dataset.
+            max_rows: Maximum rows to sample for type inference (default 100).
+
+        Returns:
+            Dict with datasource, type, dataset, table (if specified),
+            columns (name, inferred_type, sample_values), and row_count.
+        """
+        start = time.monotonic()
+        ds = self._get_datasource(datasource_name)
+
+        if ds.type != "bigquery":
+            raise ValueError(f"Datasource '{datasource_name}' is type '{ds.type}', not 'bigquery'")
+
+        project = ds.project
+        if not project:
+            raise ValueError(
+                f"No project specified for datasource '{datasource_name}'. "
+                "Set 'project' in datasource config."
+            )
+
+        ds_name = dataset or ds.dataset
+
+        from google.cloud import bigquery
+
+        def _run_sync():
+            client = bigquery.Client(project=project)
+            try:
+                if table:
+                    # Introspect a specific table
+                    table_ref = f"{project}.{ds_name}.{table}" if ds_name else f"{project}.{table}"
+                    bq_table = client.get_table(table_ref)
+
+                    # Get schema fields
+                    columns = []
+                    for field in bq_table.schema:
+                        inferred = _BIGQUERY_TYPE_MAP.get(field.field_type, "string")
+                        columns.append(
+                            {
+                                "name": field.name,
+                                "inferred_type": inferred,
+                                "sample_values": [],
+                            }
+                        )
+
+                    # Get sample rows
+                    rows_iter = client.list_rows(bq_table, max_results=max_rows)
+                    rows = list(rows_iter)
+                    for row in rows:
+                        for col in columns:
+                            if len(col["sample_values"]) < 5:
+                                val = row.get(col["name"])
+                                col["sample_values"].append(str(val) if val is not None else None)
+
+                    return {
+                        "datasource": datasource_name,
+                        "type": "bigquery",
+                        "dataset": ds_name,
+                        "table": table,
+                        "columns": columns,
+                        "row_count": bq_table.num_rows,
+                    }
+                else:
+                    # List tables in dataset
+                    if not ds_name:
+                        raise ValueError(
+                            f"No dataset specified for datasource '{datasource_name}'. "
+                            "Provide via tool parameter or datasource config."
+                        )
+                    tables = list(client.list_tables(f"{project}.{ds_name}"))
+                    table_list = []
+                    for tbl in tables:
+                        full_table = client.get_table(tbl.reference)
+                        columns = []
+                        for field in full_table.schema:
+                            inferred = _BIGQUERY_TYPE_MAP.get(field.field_type, "string")
+                            columns.append(
+                                {
+                                    "name": field.name,
+                                    "inferred_type": inferred,
+                                    "sample_values": [],
+                                }
+                            )
+                        table_list.append(
+                            {
+                                "table": tbl.table_id,
+                                "columns": columns,
+                                "row_count": full_table.num_rows,
+                            }
+                        )
+                    return {
+                        "datasource": datasource_name,
+                        "type": "bigquery",
+                        "dataset": ds_name,
+                        "tables": table_list,
+                    }
+            finally:
+                client.close()
+
+        result = await asyncio.to_thread(_run_sync)
+
+        self._audit.log(
+            agent="introspect",
+            tool="introspect_bigquery",
+            inputs={
+                "datasource_name": datasource_name,
+                "dataset": ds_name,
+                "table": table,
+                "max_rows": max_rows,
             },
             outputs=result,
             start_time=start,

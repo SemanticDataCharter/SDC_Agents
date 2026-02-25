@@ -185,12 +185,18 @@ async def test_csv_wrong_datasource_type(introspect_toolset: IntrospectToolset):
         await introspect_toolset.introspect_csv("test_db")
 
 
-async def test_get_tools_returns_four(introspect_toolset: IntrospectToolset):
-    """get_tools returns exactly 4 tools."""
+async def test_get_tools_returns_five(introspect_toolset: IntrospectToolset):
+    """get_tools returns exactly 5 tools."""
     tools = await introspect_toolset.get_tools()
-    assert len(tools) == 4
+    assert len(tools) == 5
     names = {t.name for t in tools}
-    assert names == {"introspect_sql", "introspect_csv", "introspect_json", "introspect_mongodb"}
+    assert names == {
+        "introspect_sql",
+        "introspect_csv",
+        "introspect_json",
+        "introspect_mongodb",
+        "introspect_bigquery",
+    }
 
 
 # --- JSON introspection tests ---
@@ -398,3 +404,96 @@ async def test_mongodb_no_database(tmp_path: Path):
     toolset = IntrospectToolset(config=config)
     with pytest.raises(ValueError, match="No database specified"):
         await toolset.introspect_mongodb("mongo_no_db")
+
+
+# --- BigQuery introspection tests ---
+
+
+async def test_bigquery_wrong_datasource_type(introspect_toolset: IntrospectToolset):
+    """Using a SQL datasource for BigQuery raises ValueError."""
+    with pytest.raises(ValueError, match="not 'bigquery'"):
+        await introspect_toolset.introspect_bigquery("test_db")
+
+
+async def test_bigquery_unknown_datasource(introspect_toolset: IntrospectToolset):
+    """Unknown datasource name raises KeyError."""
+    with pytest.raises(KeyError, match="Unknown datasource"):
+        await introspect_toolset.introspect_bigquery("nonexistent")
+
+
+async def test_bigquery_no_project(tmp_path: Path):
+    """Missing project raises ValueError."""
+    config = SDCAgentsConfig(
+        cache={"root": str(tmp_path / ".sdc-cache")},
+        audit={"path": str(tmp_path / "audit.jsonl")},
+        datasources={
+            "bq_no_project": {
+                "type": "bigquery",
+                "dataset": "my_dataset",
+            },
+        },
+    )
+    toolset = IntrospectToolset(config=config)
+    with pytest.raises(ValueError, match="No project specified"):
+        await toolset.introspect_bigquery("bq_no_project")
+
+
+async def test_bigquery_introspection(tmp_path: Path):
+    """BigQuery introspection returns standard format with mocked client."""
+    from unittest.mock import MagicMock, patch
+
+    config = SDCAgentsConfig(
+        cache={"root": str(tmp_path / ".sdc-cache")},
+        audit={"path": str(tmp_path / "audit.jsonl"), "log_level": "verbose"},
+        datasources={
+            "test_bq": {
+                "type": "bigquery",
+                "project": "my-gcp-project",
+                "dataset": "analytics",
+            },
+        },
+    )
+    toolset = IntrospectToolset(config=config)
+
+    # Mock BigQuery schema fields
+    mock_field_id = MagicMock()
+    mock_field_id.name = "id"
+    mock_field_id.field_type = "INT64"
+
+    mock_field_name = MagicMock()
+    mock_field_name.name = "name"
+    mock_field_name.field_type = "STRING"
+
+    mock_field_score = MagicMock()
+    mock_field_score.name = "score"
+    mock_field_score.field_type = "FLOAT64"
+
+    # Mock table
+    mock_table = MagicMock()
+    mock_table.schema = [mock_field_id, mock_field_name, mock_field_score]
+    mock_table.num_rows = 42
+
+    # Mock rows
+    mock_row = {"id": 1, "name": "Alice", "score": 95.5}
+    mock_rows_iter = [mock_row]
+
+    # Mock client
+    mock_client = MagicMock()
+    mock_client.get_table.return_value = mock_table
+    mock_client.list_rows.return_value = mock_rows_iter
+
+    with patch("google.cloud.bigquery.Client", return_value=mock_client):
+        result = await toolset.introspect_bigquery("test_bq", table="users")
+
+    assert result["datasource"] == "test_bq"
+    assert result["type"] == "bigquery"
+    assert result["dataset"] == "analytics"
+    assert result["table"] == "users"
+    assert result["row_count"] == 42
+
+    col_map = {c["name"]: c for c in result["columns"]}
+    assert col_map["id"]["inferred_type"] == "integer"
+    assert col_map["name"]["inferred_type"] == "string"
+    assert col_map["score"]["inferred_type"] == "decimal"
+    assert col_map["id"]["sample_values"] == ["1"]
+    assert col_map["name"]["sample_values"] == ["Alice"]

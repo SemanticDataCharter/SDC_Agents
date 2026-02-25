@@ -52,6 +52,9 @@ dev = [
     "aiosqlite>=0.20",
     "mongomock>=4",
 ]
+bigquery = [
+    "google-cloud-bigquery>=3",
+]
 toolbox = [
     "toolbox-adk>=0.6",
 ]

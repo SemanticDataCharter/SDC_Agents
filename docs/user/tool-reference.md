@@ -1,6 +1,6 @@
 # Agent & Tool Reference
 
-SDC Agents provides 23 tools across 6 agents. Each agent is an ADK `LlmAgent` with a scoped `BaseToolset`.
+SDC Agents provides 24 tools across 6 agents. Each agent is an ADK `LlmAgent` with a scoped `BaseToolset`.
 
 ---
 
@@ -9,7 +9,7 @@ SDC Agents provides 23 tools across 6 agents. Each agent is an ADK `LlmAgent` wi
 | Agent | Tools | Network Access | Datasource Access |
 |---|---|---|---|
 | **Catalog** | 5 | HTTPS (SDCStudio API) | None |
-| **Introspect** | 4 | None | Read-only |
+| **Introspect** | 5 | None | Read-only |
 | **Mapping** | 3 | None | None (cache only) |
 | **Generator** | 3 | None | Read-only (CSV/JSON) |
 | **Validation** | 3 | HTTPS (VaaS API, token auth) | None |
@@ -173,6 +173,71 @@ Introspect a MongoDB collection to discover document structure.
 ```
 
 **BSON type mapping:** `string` → string, `int`/`int32`/`int64`/`long` → integer, `double`/`decimal`/`decimal128` → decimal, `bool` → boolean, `date`/`timestamp` → datetime, `objectId` → objectId, `array` → array, `object` → object.
+
+### `introspect_bigquery`
+
+Introspect a BigQuery dataset or table to discover structure and types. Read-only: uses `list_rows` and schema access only. Requires `google-cloud-bigquery` (`pip install sdc-agents[bigquery]`).
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `datasource_name` | str | Yes | — | Name of a configured BigQuery datasource |
+| `dataset` | str | No | config value | Dataset name (overrides config) |
+| `table` | str | No | `null` | Table name. If omitted, lists all tables in the dataset. |
+| `max_rows` | int | No | `100` | Maximum rows to sample for type inference |
+
+**Returns** (single table):
+
+```json
+{
+  "datasource": "analytics_bq",
+  "type": "bigquery",
+  "dataset": "clinical_data",
+  "table": "lab_results",
+  "columns": [
+    {
+      "name": "test_id",
+      "inferred_type": "integer",
+      "sample_values": ["1", "2", "3"]
+    }
+  ],
+  "row_count": 1500
+}
+```
+
+**Returns** (dataset listing, when `table` is omitted):
+
+```json
+{
+  "datasource": "analytics_bq",
+  "type": "bigquery",
+  "dataset": "clinical_data",
+  "tables": [
+    {
+      "table": "lab_results",
+      "columns": [{"name": "test_id", "inferred_type": "integer", "sample_values": []}],
+      "row_count": 1500
+    }
+  ]
+}
+```
+
+**BigQuery type mapping:**
+
+| BigQuery Type | Inferred Type |
+|---|---|
+| `STRING` | string |
+| `INT64`, `INTEGER` | integer |
+| `FLOAT64`, `FLOAT` | decimal |
+| `NUMERIC`, `BIGNUMERIC` | decimal |
+| `BOOL`, `BOOLEAN` | boolean |
+| `DATE` | date |
+| `DATETIME`, `TIMESTAMP` | datetime |
+| `TIME` | time |
+| `BYTES` | string |
+| `JSON` | object |
+| `STRUCT`, `RECORD` | object |
+| `ARRAY` | array |
+| `GEOGRAPHY` | string |
 
 ---
 
