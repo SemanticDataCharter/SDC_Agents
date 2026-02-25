@@ -174,7 +174,7 @@ Which agents to configure for common workflows:
 | Explore a datasource | `introspect` |
 | Map columns to schema components | `catalog` + `introspect` + `mapping` |
 | Generate XML from CSV | `catalog` + `introspect` + `mapping` + `generator` |
-| Full pipeline (generate + validate + distribute) | All 6 agents |
+| Full pipeline (generate + validate + distribute) | All 8 agents |
 | Validate existing XML files | `validation` |
 | Distribute existing packages | `distribution` |
 | Bootstrap a triplestore | `catalog` + `distribution` |

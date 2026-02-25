@@ -17,6 +17,17 @@ aligned with SDC Generation 4.
 ## [Unreleased]
 
 ### Added
+- **Knowledge Agent**: `KnowledgeToolset` with 3 tools (`ingest_knowledge_source`, `query_knowledge`, `list_indexed_sources`) — ingests customer contextual resources (CSV, JSON, TTL, Markdown, plain text) into a local Chroma vector store for semantic context matching. Lazy `chromadb` import, `asyncio.to_thread()` for synchronous Chroma calls.
+- **Component Assembly Agent**: `AssemblyToolset` with 4 tools (`discover_components`, `propose_cluster_hierarchy`, `select_contextual_components`, `assemble_model`) — discovers catalog components matching datasource structure via type compatibility and name similarity, proposes Cluster hierarchies, selects contextual components from default library project, and calls SDCStudio Assembly API. Consumer-first with mocked Assembly API.
+- `KnowledgeConfig` and `KnowledgeSourceConfig` Pydantic models for knowledge index settings
+- `knowledge:` configuration section with `vector_store`, `vector_store_path`, and named `sources`
+- `default_library_project` field on `SDCStudioConfig` for contextual component discovery
+- `knowledge_path()` helper on `CacheManager`; `"knowledge"` added to cache subdirectories
+- `create_knowledge_agent()` and `create_assembly_agent()` factories
+- Optional `chromadb>=0.5` dependency (`pip install sdc-agents[knowledge]`)
+- 8 agents, 31 total tools (up from 6 agents, 24 tools)
+
+### Previously added (unreleased)
 - **`introspect_bigquery` tool** for Introspect Agent — BigQuery table/dataset structure extraction via `google-cloud-bigquery`, using `asyncio.to_thread()` for async compatibility. BigQuery type mapping (STRING→string, INT64→integer, FLOAT64→decimal, BOOL→boolean, DATE→date, DATETIME/TIMESTAMP→datetime, TIME→time, STRUCT/RECORD→object, ARRAY→array, etc.)
 - `bigquery` datasource type in configuration with `project` (GCP project ID) and `dataset` fields
 - Optional `google-cloud-bigquery>=3` dependency (`pip install sdc-agents[bigquery]`)
@@ -145,13 +156,14 @@ aligned with SDC Generation 4.
   - `mcp-integration.md` — MCP server setup for Claude Desktop, Cursor, and generic stdio clients
   - `workflows.md` — step-by-step guides for CSV-to-XML, audit/troubleshooting, triplestore bootstrap
 
-### Planned — Phase 5: Component Assembly and Knowledge (Future)
-- **Knowledge Agent**: `KnowledgeToolset` — ingest data dictionaries, PDFs, glossaries, ontologies into knowledge index (Chroma local / Vertex AI RAG Engine managed)
-- **Component Assembly Agent**: `AssemblyToolset` — analyze data sources, discover matching catalog components, propose Cluster hierarchies, call SDCStudio Assembly API
-- Fully autonomous: published, generated data model output — no human-in-the-loop (D4)
-- Components referenced by `ct_id`, never copied (D3)
-- Contextual components (Audit, Attestation, Party, etc.) from Default project library (D7)
-- SDCStudio dependency: `POST /api/v1/dmgen/assemble/` endpoint
+### Completed — Phase 5: Knowledge Agent + Component Assembly Agent
+- **Knowledge Agent**: `KnowledgeToolset` with 3 tools — Chroma vector store, text-based source ingestion (CSV, JSON, TTL, Markdown, plain text)
+- **Component Assembly Agent**: `AssemblyToolset` with 4 tools — catalog component discovery, Cluster hierarchy proposal, contextual component selection, Assembly API integration
+- `KnowledgeConfig` and `KnowledgeSourceConfig` Pydantic models
+- `default_library_project` config field for contextual component discovery
+- Optional `chromadb>=0.5` dependency (`pip install sdc-agents[knowledge]`)
+- Consumer-first with mocked Assembly API (consistent with Phases 1–4)
+- 8 agents, 31 total tools. Security isolation: 8 toolsets disjoint (5+5+3+3+3+5+3+4 = 31)
 
 ### Planned — Phase 6: ADK Ecosystem Contributions (Future)
 - ADK Integration Page contribution to `google/adk-docs`

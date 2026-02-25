@@ -128,11 +128,13 @@ Cache root  : .sdc-cache
 Output dir  : ./output
 Audit path  : .sdc-cache/audit.jsonl
 
-Agents (6):
+Agents (8):
+  assembly         4 tools
   catalog          5 tools
   distribution     5 tools
   generator        3 tools
   introspect       5 tools
+  knowledge        3 tools
   mapping          3 tools
   validation       3 tools
 

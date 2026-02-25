@@ -1,0 +1,15 @@
+@prefix sdc: <https://semanticdatacharter.org/ns/> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+sdc:PatientIdentifier a rdfs:Class ;
+    rdfs:label "Patient Identifier" ;
+    rdfs:comment "A unique identifier assigned to a patient within a healthcare system." .
+
+sdc:LabTest a rdfs:Class ;
+    rdfs:label "Laboratory Test" ;
+    rdfs:comment "A clinical laboratory test with measured results and reference ranges." .
+
+sdc:TestResult a rdfs:Class ;
+    rdfs:label "Test Result" ;
+    rdfs:comment "The numeric or categorical outcome of a laboratory test." .

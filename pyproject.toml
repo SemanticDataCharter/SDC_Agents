@@ -56,6 +56,9 @@ dev = [
 bigquery = [
     "google-cloud-bigquery>=3",
 ]
+knowledge = [
+    "chromadb>=0.5",
+]
 toolbox = [
     "toolbox-adk>=0.6",
 ]

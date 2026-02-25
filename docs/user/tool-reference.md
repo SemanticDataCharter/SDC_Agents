@@ -1,6 +1,6 @@
 # Agent & Tool Reference
 
-SDC Agents provides 24 tools across 6 agents. Each agent is an ADK `LlmAgent` with a scoped `BaseToolset`.
+SDC Agents provides 31 tools across 8 agents. Each agent is an ADK `LlmAgent` with a scoped `BaseToolset`.
 
 ---
 
@@ -8,12 +8,14 @@ SDC Agents provides 24 tools across 6 agents. Each agent is an ADK `LlmAgent` wi
 
 | Agent | Tools | Network Access | Datasource Access |
 |---|---|---|---|
+| **Assembly** | 4 | HTTPS (Assembly API) | None |
 | **Catalog** | 5 | HTTPS (SDCStudio API) | None |
-| **Introspect** | 5 | None | Read-only |
-| **Mapping** | 3 | None | None (cache only) |
-| **Generator** | 3 | None | Read-only (CSV/JSON) |
-| **Validation** | 3 | HTTPS (VaaS API, token auth) | None |
 | **Distribution** | 5 | Customer destinations | None |
+| **Generator** | 3 | None | Read-only (CSV/JSON) |
+| **Introspect** | 5 | None | Read-only |
+| **Knowledge** | 3 | None | Read-only (files) |
+| **Mapping** | 3 | None | None (cache only) |
+| **Validation** | 3 | HTTPS (VaaS API, token auth) | None |
 
 ---
 
@@ -553,5 +555,155 @@ Bootstrap a triplestore with SDC4 ontologies and schema RDF. Idempotent — chec
     {"name": "sdc4.rdf", "graph_uri": "urn:sdc4:ontology:sdc4", "status": "loaded"},
     {"name": "sdc4.rdf", "graph_uri": "urn:sdc4:ontology:sdc4", "status": "already_exists"}
   ]
+}
+```
+
+---
+
+## Knowledge Agent
+
+Ingests customer contextual resources (data dictionaries, glossaries, ontologies) into a local Chroma vector store for semantic context matching. Operates on local files only — no network access. Requires `chromadb` (`pip install sdc-agents[knowledge]`).
+
+### `ingest_knowledge_source`
+
+Ingest a configured knowledge source into the vector store.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `source_name` | str | Yes | — | Name of a source defined in `knowledge.sources` config |
+| `force_refresh` | bool | No | `false` | Re-index even if already cached |
+
+**Returns:**
+
+```json
+{
+  "source_name": "glossary",
+  "type": "json",
+  "path": "/data/docs/glossary.json",
+  "chunks_indexed": 25,
+  "status": "ready"
+}
+```
+
+### `query_knowledge`
+
+Query the knowledge vector store for relevant context.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `query_text` | str | Yes | — | Natural language query to search for |
+| `limit` | int | No | `5` | Maximum number of results to return |
+
+**Returns:**
+
+```json
+{
+  "query": "patient identifier",
+  "results": [
+    {"source": "glossary", "text": "patient_id: A unique identifier...", "score": 0.8721}
+  ],
+  "result_count": 3
+}
+```
+
+### `list_indexed_sources`
+
+List all indexed knowledge sources from cache metadata.
+
+**Parameters:** None.
+
+**Returns:** `list[dict]` — each with `source_name`, `type`, `chunks_indexed`, `status`.
+
+---
+
+## Assembly Agent
+
+Discovers catalog components matching datasource structure, proposes Cluster hierarchies, selects contextual components, and assembles published data models via the SDCStudio Assembly API. Operates on cached introspection results — no direct datasource access.
+
+### `discover_components`
+
+Discover catalog components matching a datasource's introspected structure.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `datasource_name` | str | Yes | — | Name of a previously introspected datasource |
+| `schema_ct_id` | str | No | `null` | Schema `ct_id` to match against (must be cached) |
+
+**Returns:**
+
+```json
+{
+  "datasource": "lab_results",
+  "matches": [
+    {"column": "test_name", "ct_id": "clxdstr001", "label": "test-name", "type": "XdString", "score": 0.9231}
+  ],
+  "unmatched": ["internal_id"]
+}
+```
+
+### `propose_cluster_hierarchy`
+
+Propose a Cluster hierarchy from datasource structure and component matches.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `datasource_name` | str | Yes | — | Name of the datasource |
+| `component_matches` | list[dict] | Yes | — | Component matches from `discover_components` |
+
+**Returns:**
+
+```json
+{
+  "hierarchy": {
+    "label": "lab-results",
+    "components": [{"ct_id": "clxdstr001"}],
+    "clusters": []
+  },
+  "cluster_count": 1
+}
+```
+
+### `select_contextual_components`
+
+Select contextual components (audit, attestation, party) from the default library project.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `context_description` | str | No | `null` | Optional description to guide component selection |
+
+**Returns:**
+
+```json
+{
+  "contextual": {
+    "audit": {"ct_id": "clctx_audit_cluster", "label": "audit-trail"},
+    "attestation": {"ct_id": "clctx_attest_cluster", "label": "attestation"},
+    "party": {"ct_id": "clctx_party_cluster", "label": "party-identifier"}
+  },
+  "project": "SDC4-Core"
+}
+```
+
+### `assemble_model`
+
+Assemble a data model by calling the SDCStudio Assembly API. Fail-closed: the entire request is rejected if any referenced component is invalid.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `title` | str | Yes | — | Title for the new data model |
+| `description` | str | Yes | — | Description of the data model |
+| `assembly_tree` | dict | Yes | — | Complete assembly tree with hierarchy and components |
+
+**Returns:**
+
+```json
+{
+  "dm_ct_id": "cldm00assembly01",
+  "title": "Lab Results Model",
+  "status": "published",
+  "artifact_urls": {
+    "xsd": "/api/catalog/schemas/cldm00assembly01/artifacts/xsd/",
+    "rdf": "/api/catalog/schemas/cldm00assembly01/artifacts/rdf/"
+  }
 }
 ```

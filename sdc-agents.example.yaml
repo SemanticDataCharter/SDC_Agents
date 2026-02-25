@@ -6,6 +6,7 @@ sdcstudio:
   base_url: "https://sdcstudio.example.com"
   api_key: "${SDC_API_KEY}"          # VaaS token (Validation Agent only)
   toolbox_url: "http://localhost:5000"  # MCP Toolbox server (optional)
+  default_library_project: "SDC4-Core"  # Default project for contextual components
 
 cache:
   root: ".sdc-cache"
@@ -48,6 +49,21 @@ datasources:
   databricks_warehouse:
     type: "sql"
     connection_string: "databricks://token:${DATABRICKS_TOKEN}@${DATABRICKS_HOST}:443/${DATABRICKS_CATALOG}.${DATABRICKS_SCHEMA}?http_path=${DATABRICKS_HTTP_PATH}"
+
+# Knowledge sources — customer contextual resources (pip install sdc-agents[knowledge])
+knowledge:
+  vector_store: "chroma"
+  vector_store_path: ".sdc-cache/knowledge/"
+  sources:
+    data_dictionary:
+      type: "markdown"
+      path: "/data/docs/data_dictionary.md"
+    glossary:
+      type: "json"
+      path: "/data/docs/glossary.json"
+    domain_ontology:
+      type: "ttl"
+      path: "/data/ontologies/domain.ttl"
 
 output:
   directory: "./output"

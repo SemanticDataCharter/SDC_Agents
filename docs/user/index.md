@@ -1,6 +1,6 @@
 # SDC Agents User Documentation
 
-SDC Agents is an open-source suite of six purpose-scoped agents built on Google's [Agent Development Kit (ADK)](https://google.github.io/adk-docs/) that transform data from SQL databases, CSV files, JSON sources, and MongoDB collections into validated, multi-format SDC4 artifacts — without requiring the user to write XML, RDF, or GQL by hand.
+SDC Agents is an open-source suite of eight purpose-scoped agents built on Google's [Agent Development Kit (ADK)](https://google.github.io/adk-docs/) that transform data from SQL databases, CSV files, JSON sources, and MongoDB collections into validated, multi-format SDC4 artifacts — without requiring the user to write XML, RDF, or GQL by hand.
 
 For installation and quick start, see the [README](../../README.md#quick-start).
 
@@ -65,6 +65,15 @@ For installation and quick start, see the [README](../../README.md#quick-start).
                      ▼       ▼       ▼
                   Fuseki   Neo4j  Filesystem
                   GraphDB  REST API
+
+┌──────────────────┐     ┌────────────────────┐
+│ Knowledge Agent  │     │  Assembly Agent    │
+│   (3 tools)      │     │    (4 tools)       │
+│                  │     │                    │
+│ Ingests customer │     │ Discovers catalog  │
+│ context into     │────▶│ components, builds │
+│ vector store     │     │ & publishes models │
+└──────────────────┘     └────────────────────┘
 ```
 
 Each agent communicates through **files on disk** (the `.sdc-cache/` directory and `./output/`), not direct calls. Every handoff is an inspectable, version-controllable artifact.
@@ -92,6 +101,8 @@ Each agent communicates through **files on disk** (the `.sdc-cache/` directory a
 ├── introspections/          # Introspection results
 ├── mappings/
 │   └── {name}.json          # Confirmed column-to-component mappings
+├── knowledge/
+│   └── {source_name}.json   # Knowledge source metadata (Knowledge Agent)
 ├── skeletons/
 │   └── dm-{ct_id}.xml       # Downloaded XML skeleton templates
 └── field_mappings/
@@ -107,7 +118,7 @@ The cache root defaults to `.sdc-cache` but is configurable via the `cache.root`
 | Document | Description |
 |---|---|
 | **[Configuration Reference](configuration.md)** | All config fields, annotated YAML, environment variable substitution, working examples |
-| **[Agent & Tool Reference](tool-reference.md)** | All 24 tools across 6 agents — parameters, return shapes, access scopes |
+| **[Agent & Tool Reference](tool-reference.md)** | All 31 tools across 8 agents — parameters, return shapes, access scopes |
 | **[MCP Integration](mcp-integration.md)** | Serve agents as MCP servers for Claude Desktop, Cursor, and generic stdio clients |
 | **[Common Workflows](workflows.md)** | Step-by-step guides: CSV to validated XML, audit troubleshooting, triplestore bootstrap |
 

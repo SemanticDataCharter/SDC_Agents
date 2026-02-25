@@ -13,10 +13,12 @@ import httpx
 import pytest
 
 from sdc_agents.common.config import SDCAgentsConfig
+from sdc_agents.toolsets.assembly import AssemblyToolset
 from sdc_agents.toolsets.catalog import CatalogToolset
 from sdc_agents.toolsets.distribution import DistributionToolset
 from sdc_agents.toolsets.generator import GeneratorToolset
 from sdc_agents.toolsets.introspect import IntrospectToolset
+from sdc_agents.toolsets.knowledge import KnowledgeToolset
 from sdc_agents.toolsets.mapping import MappingToolset
 from sdc_agents.toolsets.validation import ValidationToolset
 
@@ -134,6 +136,47 @@ async def test_distribution_only_exposes_distribution_tools(security_config):
     }
 
 
+async def test_knowledge_only_exposes_knowledge_tools(security_config):
+    """Knowledge toolset has exactly 3 knowledge-scoped tools."""
+    toolset = KnowledgeToolset(config=security_config)
+    tools = await toolset.get_tools()
+    names = {t.name for t in tools}
+    assert names == {
+        "ingest_knowledge_source",
+        "query_knowledge",
+        "list_indexed_sources",
+    }
+    # No other toolset tools
+    assert not names & {
+        "catalog_list_schemas",
+        "introspect_sql",
+        "generate_instance",
+        "discover_components",
+    }
+
+
+async def test_assembly_only_exposes_assembly_tools(security_config):
+    """Assembly toolset has exactly 4 assembly-scoped tools."""
+    transport = httpx.MockTransport(lambda r: httpx.Response(200, json=[]))
+    client = httpx.AsyncClient(transport=transport, base_url="https://test.local")
+    toolset = AssemblyToolset(config=security_config, http_client=client)
+    tools = await toolset.get_tools()
+    names = {t.name for t in tools}
+    assert names == {
+        "discover_components",
+        "propose_cluster_hierarchy",
+        "select_contextual_components",
+        "assemble_model",
+    }
+    # No other toolset tools
+    assert not names & {
+        "catalog_list_schemas",
+        "introspect_sql",
+        "generate_instance",
+        "ingest_knowledge_source",
+    }
+
+
 # --- SQL write rejection ---
 
 
@@ -199,36 +242,42 @@ async def test_unknown_csv_datasource_raises_keyerror(security_config):
 
 
 async def test_no_tool_name_overlap():
-    """Tool names across all 6 toolsets are disjoint."""
+    """Tool names across all 8 toolsets are disjoint."""
     config = SDCAgentsConfig(
         sdcstudio={"base_url": "https://test.local"},
     )
     transport = httpx.MockTransport(lambda r: httpx.Response(200, json=[]))
     client = httpx.AsyncClient(transport=transport, base_url="https://test.local")
 
+    assembly = AssemblyToolset(config=config, http_client=client)
     catalog = CatalogToolset(config=config, http_client=client)
-    introspect = IntrospectToolset(config=config)
-    mapping = MappingToolset(config=config)
-    generator = GeneratorToolset(config=config)
-    validation = ValidationToolset(config=config, http_client=client)
     distribution = DistributionToolset(config=config, http_client=client)
+    generator = GeneratorToolset(config=config)
+    introspect = IntrospectToolset(config=config)
+    knowledge = KnowledgeToolset(config=config)
+    mapping = MappingToolset(config=config)
+    validation = ValidationToolset(config=config, http_client=client)
 
     all_toolsets = {
+        "assembly": {t.name for t in await assembly.get_tools()},
         "catalog": {t.name for t in await catalog.get_tools()},
-        "introspect": {t.name for t in await introspect.get_tools()},
-        "mapping": {t.name for t in await mapping.get_tools()},
-        "generator": {t.name for t in await generator.get_tools()},
-        "validation": {t.name for t in await validation.get_tools()},
         "distribution": {t.name for t in await distribution.get_tools()},
+        "generator": {t.name for t in await generator.get_tools()},
+        "introspect": {t.name for t in await introspect.get_tools()},
+        "knowledge": {t.name for t in await knowledge.get_tools()},
+        "mapping": {t.name for t in await mapping.get_tools()},
+        "validation": {t.name for t in await validation.get_tools()},
     }
 
-    # Verify expected counts (5+5+3+3+3+5 = 24 total)
+    # Verify expected counts (5+5+3+3+3+5+3+4 = 31 total)
+    assert len(all_toolsets["assembly"]) == 4
     assert len(all_toolsets["catalog"]) == 5
-    assert len(all_toolsets["introspect"]) == 5
-    assert len(all_toolsets["mapping"]) == 3
-    assert len(all_toolsets["generator"]) == 3
-    assert len(all_toolsets["validation"]) == 3
     assert len(all_toolsets["distribution"]) == 5
+    assert len(all_toolsets["generator"]) == 3
+    assert len(all_toolsets["introspect"]) == 5
+    assert len(all_toolsets["knowledge"]) == 3
+    assert len(all_toolsets["mapping"]) == 3
+    assert len(all_toolsets["validation"]) == 3
 
     # All pairwise intersections are empty
     names = list(all_toolsets.keys())

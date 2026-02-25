@@ -1,5 +1,6 @@
 sdcstudio:
   base_url: "https://sdcstudio.test.local"
+  default_library_project: "SDC4-Core"
 
 cache:
   root: ".test-cache"
@@ -20,6 +21,20 @@ datasources:
     type: "json"
     path: "tests/fixtures/sample_data/records.json"
     jsonpath: "$.results[*]"
+
+knowledge:
+  vector_store: "chroma"
+  vector_store_path: ".test-cache/knowledge/"
+  sources:
+    glossary:
+      type: "json"
+      path: "tests/fixtures/sample_data/glossary.json"
+    vocab:
+      type: "ttl"
+      path: "tests/fixtures/sample_data/vocab.ttl"
+    data_dictionary:
+      type: "markdown"
+      path: "tests/fixtures/sample_data/data_dictionary.md"
 
 output:
   directory: "./test-output"

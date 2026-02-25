@@ -1,0 +1,7 @@
+{
+  "patient_id": "A unique identifier assigned to each patient in the system",
+  "mrn": "Medical Record Number — facility-specific patient identifier",
+  "test_name": "The name of the laboratory test performed",
+  "result_value": "Numeric result of the laboratory test measurement",
+  "reference_range": "Normal expected range for the test result"
+}
