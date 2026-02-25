@@ -9,7 +9,7 @@
 
 ## What is SDC Agents?
 
-SDC Agents is an open-source suite of **six purpose-scoped agents** built on Google's [Agent Development Kit (ADK)](https://google.github.io/adk-docs/) that transform data from SQL databases, CSV files, and JSON sources into validated, multi-format SDC4 artifacts — without requiring the user to write XML, RDF, or GQL by hand.
+SDC Agents is an open-source suite of **nine purpose-scoped agents** built on Google's [Agent Development Kit (ADK)](https://google.github.io/adk-docs/) that transform data from SQL databases, CSV files, and JSON sources into validated, multi-format SDC4 artifacts — without requiring the user to write XML, RDF, or GQL by hand.
 
 Each agent is an ADK `LlmAgent` with a narrowly scoped `BaseToolset`, auditable activity, and enforced isolation boundaries. No single agent can reach across scope boundaries — a compromised or misbehaving agent has blast radius limited to its purpose.
 
@@ -17,7 +17,7 @@ Each agent is an ADK `LlmAgent` with a narrowly scoped `BaseToolset`, auditable 
 
 ---
 
-## Architecture: Six Agents
+## Architecture: Nine Agents
 
 | Agent | Purpose | Network | Datasource Access |
 |---|---|---|---|
@@ -27,6 +27,9 @@ Each agent is an ADK `LlmAgent` with a narrowly scoped `BaseToolset`, auditable 
 | **Generator Agent** | Produce SDC4 XML instances from mapped data | None | Read-only |
 | **Validation Agent** | Validate and sign XML instances via VaaS API | HTTPS (token auth) | None |
 | **Distribution Agent** | Route artifact packages to customer-local destinations | Customer-local only | None |
+| **Knowledge Agent** | Ingest customer context (CSV, JSON, TTL, Markdown, PDF, DOCX) into vector store | None | Read-only (files) |
+| **Assembly Agent** | Discover components, propose hierarchies, assemble published models | HTTPS (Assembly API) | None |
+| **Semantic Discovery Agent** | Search Vertex AI Search for SDC4 resources (ADK-only) | GCP (Vertex AI Search) | None |
 
 ### Security Principles
 
@@ -178,7 +181,7 @@ sdc-agents serve --mcp catalog
 # Start the Introspect Agent as an MCP server
 sdc-agents serve --mcp introspect
 
-# Any of the 8 agents: assembly, catalog, distribution, generator, introspect, knowledge, mapping, validation
+# Any of the 8 MCP agents: assembly, catalog, distribution, generator, introspect, knowledge, mapping, validation
 sdc-agents serve --mcp validation
 ```
 
@@ -202,7 +205,7 @@ sdc-agents audit show --audit-path ./logs/audit.jsonl  # custom path
 
 ### Docker
 
-A single image serves all 8 agents. Select the agent at runtime with `SDC_AGENT`:
+A single image serves all 8 MCP-servable agents. Select the agent at runtime with `SDC_AGENT`:
 
 ```bash
 # Serve a single agent as an MCP server
@@ -269,7 +272,8 @@ pytest tests/security/
 | **Phase 2** | Generator and Validation agents, Introspect extensions | **Complete** |
 | **Phase 3** | Distribution Agent with multi-destination delivery | **Complete** |
 | **Phase 4** | Production hardening: CLI, Docker, CI/CD, MCP export, documentation | **Complete** |
-| **Phase 5** | Knowledge Agent + Component Assembly Agent | Future |
+| **Phase 5** | Knowledge Agent + Component Assembly Agent | **Complete** |
+| **Phase 5.5** | PDF/DOCX Knowledge Sources + Semantic Discovery Agent | **Complete** |
 | **Phase 6** | ADK ecosystem contributions (`adk-sparql-tools`, Integration Page) | Future |
 
 ### What's Implemented (Phases 1–3)
@@ -291,7 +295,7 @@ pytest tests/security/
 
 **Agent factories**: `create_catalog_agent()`, `create_introspect_agent()`, `create_mapping_agent()`, `create_generator_agent()`, `create_validation_agent()`, `create_distribution_agent()`
 
-**159 tests, 82% coverage** — 6 toolsets with 24 disjoint tools, security isolation tests (SQL write rejection, datasource name enforcement, path confinement, credential redaction, no cross-scope tool leakage)
+**176+ tests, 82% coverage** — 9 toolsets with 32 disjoint tools, security isolation tests (SQL write rejection, datasource name enforcement, path confinement, credential redaction, no cross-scope tool leakage)
 
 **Consumer-first**: all tests use `httpx.MockTransport` — zero live SDCStudio, Fuseki, or Neo4j dependency
 

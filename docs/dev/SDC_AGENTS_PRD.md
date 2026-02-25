@@ -1,7 +1,7 @@
 # SDC Agents: Purpose-Scoped ADK Agents for SDC4 Data Operations
 
 **Date**: 2026-02-23
-**Status**: Active (Phase 3 complete, Phase 4 planned)
+**Status**: Active (Phase 5.5 complete)
 **Author**: Timothy W. Cook / Claude Code
 **Repository**: `SemanticDataCharter/SDC_Agents` (Apache 2.0 License)
 **Related**: SDCStudio `docs/dev/agentic-registry/SDCStudio_API_Agents_PRD.md` (SDCStudio-side enhancement spec)
@@ -28,8 +28,8 @@ A single monolithic agent with broad access to datasources, file systems, and re
 | **Generator Agent** | XML instance generation | Mapping configs, datasource (read-only) | SDCStudio APIs, schema downloads |
 | **Validation Agent** | Instance validation and signing | VaaS API (token auth), local XML files | Datasources, schema management |
 | **Distribution Agent** | Artifact package routing | Unpacked artifact files, configured destinations | SDCStudio APIs, datasources |
-| **Knowledge Agent** *(Phase 5)* | Customer context ingestion | Customer-provided files (read-only) | SDCStudio APIs, datasources, network |
-| **Component Assembly Agent** *(Phase 5)* | Autonomous model assembly | Catalog API, Assembly API (token auth), cached knowledge | Datasources directly, VaaS API |
+| **Knowledge Agent** | Customer context ingestion | Customer-provided files (read-only) | SDCStudio APIs, datasources, network |
+| **Component Assembly Agent** | Autonomous model assembly | Catalog API, Assembly API (token auth), cached knowledge | Datasources directly, VaaS API |
 
 Each agent is an ADK `LlmAgent` with its own `BaseToolset` implementation. Tools are Python functions wrapped in `FunctionTool` — ADK derives input/output schemas from type hints and docstrings. An orchestrating agent, customer pipeline, or human operator composes them via `ToolContext.actions.transfer_to_agent` for sequential handoff — but no single agent can reach across boundaries. A compromised or misbehaving agent has blast radius limited to its scope.
 
@@ -39,7 +39,7 @@ Customers can also consume SDC tools via **MCP** as a secondary interface — ea
 
 - **Least-privilege by design** — each agent has the minimum tools for its job
 - **Auditable** — every tool invocation is logged with inputs, outputs, and timestamps via a shared `AuditLogger`
-- **Data residency by default** — four of six agents run entirely locally with no network access. Only the Catalog Agent (public schema reads) and Validation Agent (VaaS API) make outbound calls. See [Data Residency and VaaS Transit](#data-residency-and-vaas-transit) for the precise data handling model.
+- **Data residency by default** — six of eight agents run entirely locally with no network access. Only the Catalog Agent (public schema reads), Validation Agent (VaaS API), and Component Assembly Agent (Assembly API) make outbound calls. See [Data Residency and VaaS Transit](#data-residency-and-vaas-transit) for the precise data handling model.
 - **ADK-native** — built within Google's Agent Development Kit ecosystem as `LlmAgent` + `BaseToolset` + `FunctionTool`, composable with any ADK-based orchestration
 - **MCP-compatible** — secondary MCP export enables framework-agnostic integration for non-ADK clients
 - **Composable** — use one agent, some agents, or all agents depending on need
@@ -76,7 +76,7 @@ Each SDC Agent is an ADK `LlmAgent` with a scoped `BaseToolset`. The `BaseToolse
 │  │  Introspect │   │   Mapping   │   │     Generator Agent      │      │
 │  │  LlmAgent   │   │  LlmAgent   │   │     LlmAgent             │      │
 │  │             │   │             │   │                          │      │
-│  │  toolset: 4 │   │  toolset: 3 │   │  reads: mapping configs  │      │
+│  │  toolset: 5 │   │  toolset: 3 │   │  reads: mapping configs  │      │
 │  │  network: ✗ │   │  network: ✗ │   │  reads: datasource       │      │
 │  │  writes: ✗  │   │  writes: ✓  │   │  writes: XML files       │      │
 │  └──────┬──────┘   │  (configs   │   │  network: ✗              │      │
@@ -115,9 +115,25 @@ Each SDC Agent is an ADK `LlmAgent` with a scoped `BaseToolset`. The `BaseToolse
 │  ┌─────────────┐    └───────────────────────────────────────────────┘   │
 │  │Distribution │──── writes to configured destinations only             │
 │  │  LlmAgent   │                                                        │
-│  │  toolset: 4 │                                                        │
+│  │  toolset: 5 │                                                        │
 │  │  network: ✓ │  (customer-local endpoints: triplestore, graph DB)     │
 │  │  datasrc: ✗ │                                                        │
+│  └─────────────┘                                                        │
+│                                                                          │
+│  ┌─────────────┐                                                        │
+│  │  Knowledge  │──── reads customer-provided files (data dictionaries,  │
+│  │  LlmAgent   │    glossaries, ontologies, markdown)                   │
+│  │  toolset: 3 │                                                        │
+│  │  network: ✗ │    Chroma vector store in .sdc-cache/knowledge/        │
+│  │  datasrc: ✗ │                                                        │
+│  └─────────────┘                                                        │
+│                                                                          │
+│  ┌─────────────┐                          ┌──────────────────────────┐  │
+│  │  Assembly   │──── HTTPS (token) ──────▶│  SDCStudio               │  │
+│  │  LlmAgent   │    AuthCredential        │  Assembly API            │  │
+│  │  toolset: 4 │                          │  POST /api/v1/dmgen/     │  │
+│  │  network: ✓ │◀── published DM ─────────│  assemble/               │  │
+│  │  datasrc: ✗ │                          └──────────────────────────┘  │
 │  └─────────────┘                                                        │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
@@ -1164,6 +1180,259 @@ async def bootstrap_triplestore(
 
 ---
 
+### Agent 7: Knowledge Agent
+
+**Purpose**: Ingest customer-side contextual resources (data dictionaries, glossaries, ontologies, plain text) into a local Chroma vector store for semantic context matching. Provides knowledge retrieval for the Component Assembly Agent and human operators.
+
+**Credential scope**: None. Config-injected: knowledge source paths and vector store path only.
+
+**Network access**: None.
+
+**File access**: Read from configured knowledge source paths. Write to `.sdc-cache/knowledge/` (vector store and metadata).
+
+**Dependency**: `chromadb>=0.5` (optional extra: `pip install sdc-agents[knowledge]`)
+
+#### Tools
+
+##### `ingest_knowledge_source`
+
+Ingest a configured knowledge source into the Chroma vector store.
+
+```python
+async def ingest_knowledge_source(
+    source_name: str,
+    force_refresh: bool = False,
+) -> dict:
+    """Ingest a configured knowledge source into the vector store.
+
+    Args:
+        source_name: Name of the source defined in config.knowledge.sources.
+        force_refresh: If True, re-index even if already cached.
+
+    Returns:
+        Dict with keys: source_name, type, path, chunks_indexed, status.
+
+    Side Effect:
+        Indexes chunks into Chroma collection 'sdc-knowledge'.
+        Writes metadata to .sdc-cache/knowledge/{source_name}.json.
+
+    Chunking strategy:
+        CSV: each row (with header) as a chunk.
+        JSON: each record (array) or key-value pair (object) as a chunk.
+        TTL: paragraphs (double-newline split), then 500-char chunks with 50-char overlap.
+        Markdown/txt: 500-char chunks with 50-char overlap.
+    """
+```
+
+##### `query_knowledge`
+
+Query the knowledge vector store for relevant context.
+
+```python
+async def query_knowledge(
+    query_text: str,
+    limit: int = 5,
+) -> dict:
+    """Query the knowledge vector store for relevant context.
+
+    Args:
+        query_text: Natural language query to search for.
+        limit: Maximum number of results to return.
+
+    Returns:
+        Dict with keys: query, results (list of {source, text, score}),
+        result_count.
+
+    Logic:
+        Uses Chroma's default embedding function (all-MiniLM-L6-v2)
+        for semantic similarity search.
+    """
+```
+
+##### `list_indexed_sources`
+
+List all indexed knowledge sources from cache metadata.
+
+```python
+async def list_indexed_sources() -> list[dict]:
+    """List all indexed knowledge sources from cache metadata.
+
+    Returns:
+        List of dicts with keys: source_name, type, chunks_indexed, status.
+
+    Reads:
+        .sdc-cache/knowledge/ directory listing (*.json metadata files).
+    """
+```
+
+**Supported source types**: CSV, JSON, TTL (Turtle), Markdown, plain text, PDF, and DOCX. PDF support requires `pymupdf`, DOCX support requires `python-docx` — both included in the `[knowledge]` extra.
+
+**Security note**: The Knowledge Agent reads only from paths declared in the operator-controlled configuration. It cannot access datasources, SDCStudio APIs, or the network. The Chroma vector store is local to `.sdc-cache/knowledge/`.
+
+---
+
+### Agent 8: Component Assembly Agent
+
+**Purpose**: Discover catalog components matching datasource structure, propose Cluster hierarchies, select contextual components, and call the SDCStudio Assembly API to produce published data models — fully autonomously (D4).
+
+**Credential scope**: Assembly API key (same as VaaS token), injected at `AssemblyToolset` construction. Config-injected: `base_url`, `default_library_project`.
+
+**Network access**: HTTPS to configured SDCStudio base URL only (Catalog API for component discovery, Assembly API for model creation).
+
+**File access**: Read from `.sdc-cache/introspections/` and `.sdc-cache/schemas/`. No direct datasource access.
+
+#### Tools
+
+##### `discover_components`
+
+Discover catalog components matching a datasource's introspected structure.
+
+```python
+async def discover_components(
+    datasource_name: str,
+    schema_ct_id: str | None = None,
+) -> dict:
+    """Discover catalog components matching a datasource's structure.
+
+    Args:
+        datasource_name: Name of a previously introspected datasource.
+        schema_ct_id: Optional schema ct_id to match against. If None,
+            matches against all cached schema components.
+
+    Returns:
+        Dict with keys: datasource, matches (list of {column, ct_id,
+        label, type, score}), unmatched (list of str).
+
+    Logic:
+        Loads introspection result from cache. Uses TYPE_COMPATIBILITY
+        matrix (from MappingToolset) for type matching. Uses
+        SequenceMatcher name similarity for label matching. Threshold: 0.3.
+
+    Reads:
+        .sdc-cache/introspections/{datasource_name}.json
+        .sdc-cache/schemas/{schema_ct_id}.json (if provided)
+    """
+```
+
+##### `propose_cluster_hierarchy`
+
+Propose a Cluster hierarchy from datasource structure and component matches.
+
+```python
+async def propose_cluster_hierarchy(
+    datasource_name: str,
+    component_matches: list[dict],
+) -> dict:
+    """Propose a Cluster hierarchy from datasource structure and matches.
+
+    Args:
+        datasource_name: Name of the datasource.
+        component_matches: List of component match dicts from discover_components.
+
+    Returns:
+        Dict with keys: hierarchy (recursive tree with label, components,
+        clusters), cluster_count.
+
+    Logic:
+        Flat columns → single root Cluster. Dotted column names
+        (e.g., 'address.street') → nested Clusters grouped by prefix.
+    """
+```
+
+##### `select_contextual_components`
+
+Select contextual components (audit, attestation, party) from the default library project.
+
+```python
+async def select_contextual_components(
+    context_description: str | None = None,
+) -> dict:
+    """Select contextual components from the default library project.
+
+    Args:
+        context_description: Optional description to guide component selection.
+
+    Returns:
+        Dict with keys: contextual ({audit, attestation, party} each with
+        {ct_id, label} or None), project.
+
+    API Call:
+        GET /api/catalog/schemas/?project_name={default_library_project}
+
+    Logic:
+        Matches contextual slots by label patterns (e.g., 'audit',
+        'audit-trail', 'audit-log' for the audit slot).
+    """
+```
+
+##### `assemble_model`
+
+Assemble a data model by calling the SDCStudio Assembly API.
+
+```python
+async def assemble_model(
+    title: str,
+    description: str,
+    assembly_tree: dict,
+) -> dict:
+    """Assemble a data model by calling the SDCStudio Assembly API.
+
+    Args:
+        title: Title for the new data model.
+        description: Description of the data model.
+        assembly_tree: Complete assembly tree with hierarchy and components.
+            Must have 'label' key and at least one of 'components'/'clusters'.
+
+    Returns:
+        Dict with keys: dm_ct_id, title, status ('published'),
+        artifact_urls ({xsd, xml, ttl, ...}).
+
+    API Call:
+        POST /api/v1/dmgen/assemble/ with Authorization: Bearer {api_key}
+
+    Side Effect:
+        Creates a published data model in SDCStudio. The model is
+        immediately available in the catalog for Phases 1-4 consumption.
+    """
+```
+
+**Key principles**:
+- Components are **referenced by `ct_id`**, never copied — reuse across models and domains is a core SDC feature (D3)
+- Only **new Clusters and the DM** are created; all component-level artifacts already exist
+- Output is a **fully published, generated data model** — no human-in-the-loop (D4)
+- Assembly API authentication via API key → Modeler user → default project (D5)
+- Intelligence on both sides: SDC_Agents handles analysis and discovery; SDCStudio handles assembly, validation, publication, and artifact generation (D9)
+
+**Security note**: The Assembly Agent can call the Catalog API and Assembly API but cannot access datasources directly, cannot modify existing schemas, and cannot call VaaS. Component discovery reads from cached introspection results (produced by the Introspect Agent), not from live datasources.
+
+---
+
+### Agent 9: Semantic Discovery Agent (ADK-only)
+
+**Purpose**: Search a configured Vertex AI Search data store for semantically relevant SDC4 resources and catalog components, enabling intelligent catalog matching beyond syntactic name similarity.
+
+**Credential scope**: GCP Application Default Credentials (for Vertex AI Search API access).
+
+**Network access**: GCP Vertex AI Search API only.
+
+**Datasource access**: None.
+
+**File access**: None.
+
+**ADK-only**: `VertexAiSearchTool` requires a non-None `ToolContext` for `run_async()`, making this agent incompatible with the MCP stdio adapter. Not registered in `AGENT_REGISTRY`.
+
+#### Tools
+
+##### `vertex_ai_search`
+
+Search the configured Vertex AI Search data store. This tool is provided directly by ADK's `VertexAiSearchTool` — no custom wrapper needed.
+
+**Configuration**: Requires `vertex_ai_search.enabled: true` and either `data_store_id` or `search_engine_id` in `sdc-agents.yaml`.
+
+**Security note**: The Semantic Discovery Agent has GCP network access (Vertex AI Search only) but zero datasource or file system access. It maintains the core principle: **no agent has both datasource access and network access**.
+
+---
+
 ## Type Mapping Tables
 
 These tables drive the Mapping Agent's `mapping_suggest` tool. They map source data types to SDC4 component types.
@@ -1294,27 +1563,20 @@ datasources:
     path: "./data/sensor_readings.json"
     jsonpath: "$.readings[*]"
 
-# Knowledge resources (used by Knowledge Agent, Phase 5)
+# Knowledge resources (used by Knowledge Agent)
 # Customer-side contextual resources for semantic understanding.
-# NOTE: Read-only access to source files. Knowledge index stays local (or managed via GCP).
+# NOTE: Read-only access to source files. Knowledge index stays local.
+# Requires: pip install sdc-agents[knowledge] (installs chromadb>=0.5)
 knowledge:
-  # Vector store backend for the knowledge index
-  # Options: "chroma" (local, default), "vertex-ai-rag" (GCP managed),
-  #          "qdrant", "pinecone" (requires API key)
-  vector_store: "chroma"
-  vector_store_path: ".sdc-cache/knowledge/"  # For local backends (chroma, qdrant)
-  # vertex_ai_project: "${GCP_PROJECT_ID}"    # For vertex-ai-rag backend
-  # vertex_ai_corpus: "sdc-knowledge"         # For vertex-ai-rag backend
+  vector_store: "chroma"                     # Only "chroma" supported currently
+  vector_store_path: ".sdc-cache/knowledge/" # Chroma persistent storage
 
   # Customer-side contextual resources to ingest
+  # Supported types: csv, json, ttl, markdown, txt
   sources:
     data_dictionary:
       type: csv
       path: "./docs/data_dictionary.csv"
-
-    policies:
-      type: pdf
-      path: "./docs/data_governance_policy.pdf"
 
     domain_glossary:
       type: json
@@ -1323,6 +1585,10 @@ knowledge:
     existing_ontology:
       type: ttl
       path: "./docs/customer_vocab.ttl"
+
+    project_notes:
+      type: markdown
+      path: "./docs/project_notes.md"
 
 # Output settings (used by Generator Agent and Validation Agent)
 output:
@@ -1382,6 +1648,8 @@ from sdc_agents.toolsets.mapping import MappingToolset
 from sdc_agents.toolsets.generator import GeneratorToolset
 from sdc_agents.toolsets.validation import ValidationToolset
 from sdc_agents.toolsets.distribution import DistributionToolset
+from sdc_agents.toolsets.knowledge import KnowledgeToolset
+from sdc_agents.toolsets.assembly import AssemblyToolset
 
 config = load_config("sdc-agents.yaml")
 
@@ -1434,6 +1702,22 @@ distribution_agent = LlmAgent(
     tools=DistributionToolset(config=config).get_tools(),
 )
 
+knowledge_agent = LlmAgent(
+    name="knowledge",
+    model="gemini-2.0-flash",
+    description="Ingests customer contextual resources (data dictionaries, glossaries, ontologies) into a local vector store.",
+    instruction="Ingest and query customer knowledge sources for semantic context.",
+    tools=KnowledgeToolset(config=config).get_tools(),
+)
+
+assembly_agent = LlmAgent(
+    name="assembly",
+    model="gemini-2.0-flash",
+    description="Discovers catalog components matching datasource structure and assembles published data models.",
+    instruction="Discover components, propose hierarchies, and assemble data models via the Assembly API.",
+    tools=AssemblyToolset(config=config).get_tools(),
+)
+
 # Compose as sub-agents of a root orchestrator (optional)
 # Note: description on each sub-agent is required for transfer_to_agent routing
 root_agent = LlmAgent(
@@ -1443,6 +1727,7 @@ root_agent = LlmAgent(
     sub_agents=[
         catalog_agent, introspect_agent, mapping_agent,
         generator_agent, validation_agent, distribution_agent,
+        knowledge_agent, assembly_agent,
     ],
 )
 
@@ -1462,7 +1747,7 @@ runner = Runner(
 |---|---|---|
 | Datasource connection strings | Introspect Agent, Generator Agent | `IntrospectToolset(config=...)`, `GeneratorToolset(config=...)` |
 | VaaS API token | Validation Agent only | `ValidationToolset(config=...)` with `AuthCredential` |
-| Assembly API key | Component Assembly Agent only *(Phase 5)* | `AssemblyToolset(config=...)` with `AuthCredential` |
+| Assembly API key | Component Assembly Agent only | `AssemblyToolset(config=...)` with `AuthCredential` |
 | SDCStudio base URL | Catalog Agent, Validation Agent, Component Assembly Agent | `CatalogToolset(config=...)`, `ValidationToolset(config=...)`, `AssemblyToolset(config=...)` |
 | Triplestore credentials | Distribution Agent only | `DistributionToolset(config=...)` |
 | Graph DB credentials | Distribution Agent only | `DistributionToolset(config=...)` |
@@ -1537,7 +1822,7 @@ sdc-agents serve --mcp introspect
 
 ---
 
-## Observability (Phase 4)
+## Observability
 
 The audit log (`.sdc-cache/audit.jsonl`) captures every tool invocation for compliance. For production monitoring — latency dashboards, error rate tracking, LLM token usage, tool call distributions — SDC Agents integrates with ADK's observability ecosystem:
 
@@ -1554,7 +1839,7 @@ Observability is complementary to the audit log — the audit log is the complia
 
 ## Data Residency and VaaS Transit
 
-Four of six agents (Catalog, Introspect, Mapping, Generator) operate entirely on the customer's infrastructure. The exception is the **Validation Agent**, which transmits XML instance documents to SDCStudio's VaaS API over HTTPS for validation and signing.
+Six of eight agents (Introspect, Mapping, Generator, Knowledge, and partially Catalog and Distribution) operate entirely on the customer's infrastructure or customer-local endpoints. The **Validation Agent** transmits XML instance documents to SDCStudio's VaaS API over HTTPS for validation and signing. The **Component Assembly Agent** calls the SDCStudio Assembly API to create published data models.
 
 ### What leaves the customer's infrastructure
 
@@ -1653,7 +1938,7 @@ This means SDC_Agents Phases 1–4 are developed to completion before SDCStudio 
 - `sdc_agents.common.audit` — `AuditLogger` with append-only JSONL, `_sanitize()` redacts keys containing connection/token/key/password/secret, `_summarize()` reduces outputs to counts at standard log level
 - `sdc_agents.common.cache` — `CacheManager` with path helpers for schemas/ontologies/introspections/mappings, `ensure_dirs()`, `is_cached()`
 - **Catalog Agent**: `CatalogToolset(BaseToolset)` with 5 tools (`catalog_list_schemas`, `catalog_get_schema`, `catalog_download_schema_rdf`, `catalog_download_skeleton`, `catalog_download_ontologies`), httpx async client, cache-first for immutable schemas
-- **Introspect Agent**: `IntrospectToolset(BaseToolset)` with 2 tools (`introspect_sql`, `introspect_csv`), SELECT-only regex enforcement, CSV type inference for 10 types (boolean > integer > decimal > date > datetime > time > email > URL > UUID > string)
+- **Introspect Agent**: `IntrospectToolset(BaseToolset)` with 2 tools initially (`introspect_sql`, `introspect_csv`), SELECT-only regex enforcement, CSV type inference for 10 types (boolean > integer > decimal > date > datetime > time > email > URL > UUID > string). Extended to 5 tools in Phase 2.
 - **Mapping Agent**: `MappingToolset(BaseToolset)` with 3 tools (`mapping_suggest`, `mapping_confirm`, `mapping_list`), `TYPE_COMPATIBILITY` matrix + `SequenceMatcher` name similarity, JSON persist/list in `.sdc-cache/mappings/`
 - Agent factories: `create_catalog_agent()`, `create_introspect_agent()`, `create_mapping_agent()` — each returns `LlmAgent(tools=[Toolset(config)])`
 - Mock fixtures: `httpx.MockTransport` for Catalog API, `aiosqlite` for SQL introspection — zero live SDCStudio dependency
@@ -1708,59 +1993,104 @@ This means SDC_Agents Phases 1–4 are developed to completion before SDCStudio 
 - Manifest `destination` values looked up in config; unknown destinations skipped gracefully (not an error).
 - `bootstrap_triplestore` checks for existing named graphs via SPARQL ASK before uploading (idempotent).
 - `distribute_batch` uses regular `FunctionTool` (not `LongRunningFunctionTool`).
-- All tests use `httpx.MockTransport` — zero live Fuseki/Neo4j dependency. Integration tests deferred to Phase 4.
+- All tests use `httpx.MockTransport` — zero live Fuseki/Neo4j dependency. Integration tests deferred to a future phase.
 
 **SDCStudio dependency**: Phase 3 defines the artifact package contract (`manifest.json` structure, zip contents, `?package=true` behavior). SDCStudio implements the VaaS package support **after** the Distribution Agent's expectations are stable.
 
-### Phase 4: Production Hardening and Integration Testing
+### Phase 4: Production Hardening and Integration Testing — COMPLETE
 
-**Goal**: Community-ready release with documentation, packaging, ecosystem integration, and **end-to-end integration testing against live SDCStudio**.
+**Goal**: Community-ready release with documentation, packaging, ecosystem integration, and production hardening.
 
-**Deliverables**:
-- **Integration tests against live SDCStudio** — validate mocked contracts match real API behavior
-- Comprehensive documentation (README, per-agent guides, security model)
-- PyPI packaging (`pip install sdc-agents`)
-- MCP export adapters (per-agent MCP server mode via `adk_to_mcp_tool_type`)
-- ADK Integration Page contribution (`docs/integrations/sdc-agents.md` to `google/adk-docs` repo — see [ADK Integration Page](#adk-integration-page-phase-4))
-- **ADK Ecosystem Contribution** — generalize Phase 3 SPARQL connector and contribute to `google/adk-docs` integrations directory (see [ADK Ecosystem Contributions](#adk-ecosystem-contributions-phase-4)):
-  - `adk-sparql-tools` — SPARQL 1.1 / Fuseki / GraphDB integration (fills a gap: no triplestore integrations exist in the current ADK ecosystem)
-  - ~~`adk-neo4j-tools`~~ — superseded by [MCP Toolbox for Databases](https://google.github.io/adk-docs/integrations/mcp-toolbox-for-databases/#graph-databases) (Neo4j + Dgraph support)
-- Docker images (one per agent, for containerized deployment with network isolation)
-- GitHub Actions CI/CD (lint, test, security scan, publish)
-- Example configurations for common use cases (healthcare, IoT, financial)
-- Contribution guidelines and issue templates
-- Observability integration — Google Cloud Trace for GCP, OpenTelemetry export for self-hosted (see [Observability](#observability-phase-4))
-- Audit log viewer CLI (`sdc-agents audit show --agent distribution --last 24h`)
+**Status**: Complete (2026-02-24). 159 tests passing, 82% coverage. Full CLI, Docker, CI/CD, MCP export, and documentation.
 
-**This is when SDCStudio enhancements are built and validated.** By Phase 4, every API contract has been battle-tested by the agent code. SDCStudio implements its Phases 1–3 (Catalog enhancements, VaaS packages, retention) to match the verified consumer contracts. Integration tests confirm both sides agree.
+**Delivered**:
+- **CLI** (`sdc-agents`): `info`, `validate-config`, `serve --mcp <agent>`, `audit show` commands via Click
+- **MCP export**: Per-agent MCP server mode via `adk_to_mcp_tool_type` — each agent served as stdio MCP server
+- **Docker**: Single image serves all agents, selected at runtime via `SDC_AGENT` env var. Published to `ghcr.io/semanticdatacharter/sdc-agents`
+- **CI/CD**: GitHub Actions — CI (ruff + black + pytest across Python 3.11/3.12/3.13), Docker (build + push to GHCR), Release (PyPI via OIDC trusted publisher)
+- **PyPI packaging**: `pip install sdc-agents` with optional extras (`[knowledge]` for chromadb)
+- **Comprehensive documentation**: User docs (configuration, tool reference, MCP integration, workflows), dev docs (PRD, contributing, security), example configs
+- **Audit log viewer CLI**: `sdc-agents audit show --agent distribution --last 24h --limit 20`
+- **Observability documentation**: Google Cloud Trace, OpenTelemetry, Phoenix, MLflow integration references
+- Contribution guidelines (`CONTRIBUTING.md`), security policy (`SECURITY.md`), changelog (`CHANGELOG.md`)
 
-### Phase 5: Component Assembly and Knowledge Agents (Future)
+**Deferred to future phases**:
+- Integration tests against live SDCStudio (SDCStudio endpoints not yet implemented)
+- ADK Integration Page contribution to `google/adk-docs`
+- `adk-sparql-tools` ecosystem contribution
+- Example configurations for common use cases
+
+### Phase 5: Component Assembly and Knowledge Agents — COMPLETE
 
 **Goal**: Shift from consume-only to create-and-consume — agents analyze data sources, discover matching catalog components, and assemble published SDC4 data models autonomously.
 
-Phase 5 adds two agents:
+**Status**: Complete (2026-02-24). 176 tests passing (17 new), 82% coverage. 8 agents, 31 tools. Extended by Phase 5.5 (PDF/DOCX + Semantic Discovery).
 
-- **Knowledge Agent**: Ingests customer-side contextual resources (data dictionaries, PDFs, metadata repositories, existing ontologies) into a semantic knowledge index. Provides context to the Component Assembly Agent for better component matching, Cluster naming, and contextual component selection. Read-only, no network access (for local deployments). The knowledge index backend is configurable:
-  - **Local**: [Chroma](https://google.github.io/adk-docs/integrations/chroma/) vector store in `.sdc-cache/knowledge/` — zero infrastructure, embedded in the agent process
-  - **GCP**: [Vertex AI RAG Engine](https://google.github.io/adk-docs/integrations/vertex-ai-rag-engine/) — managed retrieval with Google Cloud auth, for customers already on GCP
-  - Other ADK-compatible vector stores ([Qdrant](https://google.github.io/adk-docs/integrations/qdrant/), [Pinecone](https://google.github.io/adk-docs/integrations/pinecone/)) can be substituted via configuration
+**Delivered**:
+- **Knowledge Agent**: `KnowledgeToolset(BaseToolset)` with 3 tools (`ingest_knowledge_source`, `query_knowledge`, `list_indexed_sources`), Chroma vector store with default embeddings (all-MiniLM-L6-v2), text-based source ingestion (CSV, JSON, TTL, Markdown, plain text), 500-char chunking with 50-char overlap
+- **Component Assembly Agent**: `AssemblyToolset(BaseToolset)` with 4 tools (`discover_components`, `propose_cluster_hierarchy`, `select_contextual_components`, `assemble_model`), type compatibility matching (reuses `TYPE_COMPATIBILITY` from MappingToolset), name similarity scoring (`SequenceMatcher`), Assembly API integration with token auth
+- `KnowledgeConfig` and `KnowledgeSourceConfig` Pydantic models with `Literal["csv", "json", "ttl", "markdown", "txt", "pdf", "docx"]` type validation
+- `default_library_project` config field on `SDCStudioConfig` for contextual component discovery
+- Optional `chromadb>=0.5` dependency via `[knowledge]` extra
+- Agent factories: `create_knowledge_agent()`, `create_assembly_agent()`
+- CLI registration: both agents in `AGENT_REGISTRY`, MCP-servable
+- Security tests: 8 toolsets with disjoint tool name sets (5+5+3+3+3+5+3+4 = 31 total tools), no cross-scope leakage
+- Consumer-first: Assembly API mocked via `httpx.MockTransport`, Chroma mocked via `unittest.mock.patch` — zero live dependency
 
-- **Component Assembly Agent**: Analyzes data sources (using Introspect Agent results + Knowledge Agent context), discovers matching published components from the SDCStudio catalog, proposes arbitrarily deep Cluster hierarchies reflecting the data source structure, selects contextual components (Audit, Attestation, Party, etc.) from SDCStudio's Default project library, and calls the SDCStudio assembly API. The output is a **fully published, generated data model** — immediately available in the catalog for Phases 1–4 consumption. No human-in-the-loop.
+**Implementation notes**:
+- Chroma is the only supported vector store backend. Vertex AI RAG Engine, Qdrant, and Pinecone support deferred — can be added via configuration when needed.
+- PDF support via `pymupdf` (lazy import, `ImportError` with install instructions if missing). DOCX support via `python-docx` (same pattern). Both included in `[knowledge]` extra.
+- `chromadb` is lazily imported at module level with try/except pattern. Missing dependency raises `ImportError` with install instructions.
+- All Chroma calls wrapped in `asyncio.to_thread()` (same pattern as BigQuery introspection).
+- Component discovery uses agent-side intelligence (type compatibility + name similarity). Vertex AI Search available via the Semantic Discovery Agent (Phase 5.5).
+- Single datasource per assembly call. Multi-source assembly deferred.
 
-**Key principles** (see `docs/dev/COMPONENT_ASSEMBLY_DESIGN.md` for full design decisions):
-- Components are **referenced by `ct_id`**, never copied — reuse across models and domains is a core SDC feature
-- Only **new Clusters and the DM** are created; all component-level artifacts already exist
-- Assembly API authentication via API key → Modeler user → default project (same pattern as VaaS)
-- Intelligence on both sides: SDC_Agents handles analysis and discovery; SDCStudio handles assembly, validation, publication, and artifact generation
-- Component discovery may leverage [Vertex AI Search](https://google.github.io/adk-docs/integrations/vertex-ai-search/) for semantic matching (e.g., agent queries "blood pressure measurement" and Vertex AI Search finds the matching `ct_id` from the catalog) — evaluated during Phase 5 implementation
+**Key design decisions** (see also [Resolved Decisions](#resolved-decisions)):
+- **D3**: Components referenced by `ct_id`, never copied
+- **D4**: Fully autonomous — output is a published, generated data model, no human-in-the-loop
+- **D5**: Assembly API authentication via API key → Modeler user → default project
+- **D7**: Contextual component discovery via Default project, filtered by `default_library_project` config
+- **D8**: Arbitrarily complex data trees — nested Cluster hierarchies reflecting data source structure
+- **D9**: Intelligence on both sides — SDC_Agents handles analysis; SDCStudio handles assembly and publication
 
-**Development sequence**: Same consumer-first pattern. Build and test both agents with mocked Assembly API responses. SDCStudio implements `POST /api/v1/dmgen/assemble/` afterward to match the verified contract.
+**SDCStudio dependency**: Phase 5 defines the Assembly API contract (`POST /api/v1/dmgen/assemble/`). SDCStudio implements this endpoint **after** the agent contract is stable.
+
+### Phase 5.5: PDF/DOCX Knowledge Sources + Semantic Discovery Agent — COMPLETE
+
+**Goal**: Add PDF/DOCX support to the Knowledge Agent and introduce a 9th agent for semantic component discovery via Vertex AI Search.
+
+**Status**: Complete (2026-02-24). 9 agents, 32 tools.
+
+**Delivered**:
+- **Semantic Discovery Agent**: `SemanticDiscoveryToolset(BaseToolset)` with 1 tool (`vertex_ai_search`), wrapping ADK's `VertexAiSearchTool`. ADK-native only — `VertexAiSearchTool` requires a non-None `ToolContext`, incompatible with MCP stdio adapter's `tool_context=None`.
+- `VertexAiSearchConfig` Pydantic model with `model_validator` — validates `data_store_id` or `search_engine_id` when enabled
+- `create_semantic_discovery_agent()` factory
+- Knowledge Agent PDF support via `pymupdf` (lazy import, `ImportError` with install instructions)
+- Knowledge Agent DOCX support via `python-docx` (same lazy import pattern)
+- `pdf` and `docx` added to `KnowledgeSourceConfig.type` literal
+- Optional `pymupdf>=1.24` and `python-docx>=1.1` in `[knowledge]` extra
+- Optional `google-cloud-aiplatform>=1.52` in `[vertex-ai-search]` extra
+- Security: Semantic Discovery Agent has GCP network access (Vertex AI Search only) but zero datasource or file system access
+- Not added to `AGENT_REGISTRY` (MCP incompatible) — ADK-only usage
+- CLI `info` command shows 9 agents with "(ADK-only)" marker for semantic_discovery
+
+### Phase 6: ADK Ecosystem Contributions (Future)
+
+**Goal**: Contribute to the ADK ecosystem and complete production integrations.
+
+**Planned**:
+- **Integration tests against live SDCStudio** — validate mocked contracts match real API behavior
+- **ADK Integration Page** — contribute `docs/integrations/sdc-agents.md` to `google/adk-docs` repo
+- **`adk-sparql-tools`** — generalize Distribution Agent's SPARQL connector into a standalone ADK integration
+- **Managed vector store backends** — Vertex AI RAG Engine, Qdrant, Pinecone support for Knowledge Agent
+- **Multi-source assembly** — assemble DMs from components discovered across multiple data sources
+- Example configurations for common use cases (healthcare, IoT, financial)
 
 ---
 
-## ADK Integration Page (Phase 4)
+## ADK Integration Page (Future)
 
-Phase 4 includes contributing an integration page to the `google/adk-docs` repository to get SDC Agents listed on the [ADK Integrations directory](https://google.github.io/adk-docs/integrations/) alongside GitHub, BigQuery, MongoDB, etc.
+A future phase includes contributing an integration page to the `google/adk-docs` repository to get SDC Agents listed on the [ADK Integrations directory](https://google.github.io/adk-docs/integrations/) alongside GitHub, BigQuery, MongoDB, etc.
 
 **Required structure** (per `google/adk-docs` CONTRIBUTING.md):
 
@@ -1778,9 +2108,9 @@ Phase 4 includes contributing an integration page to the `google/adk-docs` repos
 
 ---
 
-## ADK Ecosystem Contributions (Phase 4)
+## ADK Ecosystem Contributions (Future)
 
-Phase 3 builds triplestore and property graph connectors for the Distribution Agent. Phase 4 generalizes the triplestore connector into a standalone ADK integration and contributes it to the `google/adk-docs` integrations directory. **No triplestore integration currently exists** in the ADK ecosystem — `adk-sparql-tools` fills this gap. Property graph support (Neo4j, Dgraph) is already available via [MCP Toolbox for Databases](https://google.github.io/adk-docs/integrations/mcp-toolbox-for-databases/#graph-databases), so `adk-neo4j-tools` is no longer needed as an ecosystem contribution.
+Phase 3 built triplestore and property graph connectors for the Distribution Agent. A future phase will generalize the triplestore connector into a standalone ADK integration and contribute it to the `google/adk-docs` integrations directory. **No triplestore integration currently exists** in the ADK ecosystem — `adk-sparql-tools` fills this gap. Property graph support (Neo4j, Dgraph) is already available via [MCP Toolbox for Databases](https://google.github.io/adk-docs/integrations/mcp-toolbox-for-databases/#graph-databases), so `adk-neo4j-tools` is no longer needed as an ecosystem contribution.
 
 ### `adk-sparql-tools` — SPARQL / Triplestore Integration
 
@@ -1797,8 +2127,8 @@ Neo4j and Dgraph property graph support is now available via [MCP Toolbox for Da
 
 ### Contribution Strategy
 
-1. **Phase 3**: Build connectors for SDC Distribution Agent use case (complete)
-2. **Phase 4**: Extract SPARQL module as generic integration, write docs and tests, submit PRs to `google/adk-docs`
+1. **Phase 3** (complete): Built connectors for SDC Distribution Agent use case
+2. **Future**: Extract SPARQL module as generic integration, write docs and tests, submit PRs to `google/adk-docs`
 3. **Same CLA** — the Google CLA signing for the SDC Agents integration page covers these contributions
 4. **Two PRs total**: SDC Agents integration page + SPARQL integration
 
@@ -1817,10 +2147,10 @@ SDC Agents leverages existing ADK ecosystem integrations rather than building cu
 | [Spanner Tools](https://google.github.io/adk-docs/integrations/spanner/) | Introspect Agent | GCP-native Spanner introspection with IAM auth |
 | [MongoDB](https://google.github.io/adk-docs/integrations/mongodb/) | Introspect Agent | Document database schema analysis and sampling |
 | [OpenAPIToolset](https://google.github.io/adk-docs/tools/openapi-tools/) | Catalog Agent | Auto-generated API bindings from SDCStudio's drf-yasg OpenAPI spec |
-| [Chroma](https://google.github.io/adk-docs/integrations/chroma/) | Knowledge Agent *(Phase 5)* | Local vector store for customer knowledge index |
-| [Vertex AI RAG Engine](https://google.github.io/adk-docs/integrations/vertex-ai-rag-engine/) | Knowledge Agent *(Phase 5)* | Managed retrieval for GCP-native deployments |
-| [Vertex AI Search](https://google.github.io/adk-docs/integrations/vertex-ai-search/) | Component Assembly Agent *(Phase 5)* | Semantic component discovery from catalog |
-| [Google Cloud Trace](https://google.github.io/adk-docs/integrations/google-cloud-trace/) | All agents *(Phase 4)* | Production observability — latency, error rates, token usage |
+| [Chroma](https://google.github.io/adk-docs/integrations/chroma/) | Knowledge Agent | Local vector store for customer knowledge index |
+| [Vertex AI RAG Engine](https://google.github.io/adk-docs/integrations/vertex-ai-rag-engine/) | Knowledge Agent *(future)* | Managed retrieval for GCP-native deployments |
+| [Vertex AI Search](https://google.github.io/adk-docs/integrations/vertex-ai-search/) | Semantic Discovery Agent | Semantic component discovery from catalog (ADK-only) |
+| [Google Cloud Trace](https://google.github.io/adk-docs/integrations/google-cloud-trace/) | All agents *(future)* | Production observability — latency, error rates, token usage |
 
 ---
 
@@ -1834,6 +2164,9 @@ SDC Agents leverages existing ADK ecosystem integrations rather than building cu
 - Generating SDC4 XML instance documents (Generator Agent)
 - Validating, signing, and requesting artifact packages via VaaS (Validation Agent)
 - Routing artifact packages to customer-local destinations (Distribution Agent)
+- Ingesting customer contextual resources into a local vector store (Knowledge Agent)
+- Autonomous data model assembly from catalog components via the Assembly API (Component Assembly Agent)
+- Semantic component discovery via Vertex AI Search (Semantic Discovery Agent, ADK-only)
 - Structured audit logging of all tool invocations
 - YAML-based operator-controlled configuration
 - Per-agent ADK `BaseToolset` + `LlmAgent` definitions
@@ -1849,9 +2182,9 @@ SDC Agents leverages existing ADK ecosystem integrations rather than building cu
 - **VaaS artifact package generation** — server-side transformation is an SDCStudio enhancement (see [SDCStudio enhancement spec](https://github.com/Axius-SDC/SDCStudio/blob/main/docs/dev/agentic-registry/SDCStudio_API_Agents_PRD.md))
 - **Destination-specific query/read-back** — the Distribution Agent writes to destinations but does not query them
 
-### Future: Component Assembly and Knowledge (Phase 5)
+### Component Assembly and Knowledge (Phase 5 — Complete)
 
-**Creating new SDC4 schemas** is not in scope for Phases 1–4 — agents map to existing published models only. Phase 5 adds the **Knowledge Agent** (customer context ingestion) and **Component Assembly Agent** (autonomous model assembly from catalog components). Components are referenced by `ct_id`, never copied. Only new Clusters and the DM are created. The output is a fully published, generated data model — no human-in-the-loop. See [Phase 5](#phase-5-component-assembly-and-knowledge-agents-future) and [Component Assembly Design](docs/dev/COMPONENT_ASSEMBLY_DESIGN.md) for decisions D3–D9.
+Phases 1–4 agents map to existing published models only. Phase 5 added the **Knowledge Agent** (customer context ingestion via Chroma vector store) and **Component Assembly Agent** (autonomous model assembly from catalog components via the Assembly API). Components are referenced by `ct_id`, never copied. Only new Clusters and the DM are created. The output is a fully published, generated data model — no human-in-the-loop. See [Phase 5](#phase-5-component-assembly-and-knowledge-agents--complete) and [Resolved Decisions](#resolved-decisions) for decisions D3–D9.
 
 ---
 
@@ -1869,13 +2202,13 @@ SDC Agents leverages existing ADK ecosystem integrations rather than building cu
 
 6. **Multi-schema mapping**: Some datasources may map to multiple SDC4 schemas (e.g., a patient table producing both vitals and demographics instances). Deferred to Phase 2 or later?
 
-7. **Knowledge Agent scope**: Should the Knowledge Agent be a separate agent or an expansion of the Introspect Agent? The Introspect Agent already reads customer data sources — adding knowledge resource ingestion is a natural extension. But the security model may differ (knowledge resources are documentation, not live data).
+7. ~~**Knowledge Agent scope**~~: **Resolved (Phase 5)** — Separate agent. The Knowledge Agent has a different security model (documentation files vs. live datasources) and different dependencies (chromadb). Keeping it separate maintains clean isolation boundaries.
 
-8. **Assembly validation failures**: If the assembly endpoint finds an invalid reference (unpublished component, incompatible type in a Cluster slot), does it reject the entire request or return a partial result with errors? Fail-closed (reject) is consistent with the existing security principles.
+8. ~~**Assembly validation failures**~~: **Resolved (Phase 5)** — Fail-closed. The entire assembly request is rejected on invalid component references, consistent with the existing security principles. `httpx.HTTPStatusError` propagated to the caller.
 
-9. **Component matching intelligence**: How much semantic matching intelligence should live in the Component Assembly Agent vs. SDCStudio? The agent has the customer's knowledge context; SDCStudio has the component metadata and type system. The matching logic likely needs both.
+9. ~~**Component matching intelligence**~~: **Resolved (Phase 5)** — Agent-side for now. Type compatibility (via `TYPE_COMPATIBILITY` matrix from MappingToolset) + name similarity (via `SequenceMatcher`) implemented in `discover_components`. Vertex AI Search evaluation deferred to a future phase.
 
-10. **Multi-source assembly**: Can a single DM be assembled from components discovered across multiple data sources? E.g., patient demographics from a SQL database + lab results from CSV files → single Patient Record DM. This seems natural but adds complexity to the Cluster hierarchy design.
+10. ~~**Multi-source assembly**~~: **Deferred** — Single datasource per assembly call for Phase 5. Multi-source assembly adds complexity to Cluster hierarchy design and will be addressed in a future phase.
 
 ---
 

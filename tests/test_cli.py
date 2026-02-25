@@ -159,7 +159,8 @@ def test_info_loads_config():
     assert "knowledge" in result.output
     assert "assembly" in result.output
     assert "test_triplestore" in result.output or "test_archive" in result.output
-    assert "Agents (8)" in result.output
+    assert "Agents (9)" in result.output
+    assert "semantic_discovery" in result.output
 
 
 def test_validate_config_success():

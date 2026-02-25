@@ -128,7 +128,7 @@ Cache root  : .sdc-cache
 Output dir  : ./output
 Audit path  : .sdc-cache/audit.jsonl
 
-Agents (8):
+Agents (9):
   assembly         4 tools
   catalog          5 tools
   distribution     5 tools
@@ -137,6 +137,7 @@ Agents (8):
   knowledge        3 tools
   mapping          3 tools
   validation       3 tools
+  semantic_discovery 1 tools  (ADK-only)
 
 Datasources (2):
   patient_csv          type=csv

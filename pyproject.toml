@@ -58,6 +58,11 @@ bigquery = [
 ]
 knowledge = [
     "chromadb>=0.5",
+    "pymupdf>=1.24",
+    "python-docx>=1.1",
+]
+vertex-ai-search = [
+    "google-cloud-aiplatform>=1.52",
 ]
 toolbox = [
     "toolbox-adk>=0.6",

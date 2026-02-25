@@ -17,6 +17,16 @@ aligned with SDC Generation 4.
 ## [Unreleased]
 
 ### Added
+- **Semantic Discovery Agent**: `SemanticDiscoveryToolset` with 1 tool (`vertex_ai_search`), ADK-native only — wraps ADK's `VertexAiSearchTool` for semantic component discovery from Vertex AI Search data stores. Cannot be served via MCP (`ToolContext` requirement).
+- `VertexAiSearchConfig` Pydantic model with `model_validator` for enabled state validation
+- `create_semantic_discovery_agent()` factory
+- Knowledge Agent PDF/DOCX support via `pymupdf` and `python-docx` — binary formats handled before `read_text()` in `_read_source()`
+- `pdf` and `docx` added to `KnowledgeSourceConfig.type` literal
+- Optional `pymupdf>=1.24` and `python-docx>=1.1` in `[knowledge]` extra
+- Optional `google-cloud-aiplatform>=1.52` in `[vertex-ai-search]` extra
+- 9 agents, 32 total tools (up from 8 agents, 31 tools)
+
+### Previously added (unreleased)
 - **Knowledge Agent**: `KnowledgeToolset` with 3 tools (`ingest_knowledge_source`, `query_knowledge`, `list_indexed_sources`) — ingests customer contextual resources (CSV, JSON, TTL, Markdown, plain text) into a local Chroma vector store for semantic context matching. Lazy `chromadb` import, `asyncio.to_thread()` for synchronous Chroma calls.
 - **Component Assembly Agent**: `AssemblyToolset` with 4 tools (`discover_components`, `propose_cluster_hierarchy`, `select_contextual_components`, `assemble_model`) — discovers catalog components matching datasource structure via type compatibility and name similarity, proposes Cluster hierarchies, selects contextual components from default library project, and calls SDCStudio Assembly API. Consumer-first with mocked Assembly API.
 - `KnowledgeConfig` and `KnowledgeSourceConfig` Pydantic models for knowledge index settings
@@ -25,7 +35,6 @@ aligned with SDC Generation 4.
 - `knowledge_path()` helper on `CacheManager`; `"knowledge"` added to cache subdirectories
 - `create_knowledge_agent()` and `create_assembly_agent()` factories
 - Optional `chromadb>=0.5` dependency (`pip install sdc-agents[knowledge]`)
-- 8 agents, 31 total tools (up from 6 agents, 24 tools)
 
 ### Previously added (unreleased)
 - **`introspect_bigquery` tool** for Introspect Agent — BigQuery table/dataset structure extraction via `google-cloud-bigquery`, using `asyncio.to_thread()` for async compatibility. BigQuery type mapping (STRING→string, INT64→integer, FLOAT64→decimal, BOOL→boolean, DATE→date, DATETIME/TIMESTAMP→datetime, TIME→time, STRUCT/RECORD→object, ARRAY→array, etc.)

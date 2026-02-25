@@ -64,6 +64,20 @@ knowledge:
     domain_ontology:
       type: "ttl"
       path: "/data/ontologies/domain.ttl"
+    policy_manual:
+      type: "pdf"
+      path: "./docs/data_governance_policy.pdf"
+    requirements_doc:
+      type: "docx"
+      path: "./docs/requirements.docx"
+
+# Vertex AI Search — semantic discovery (ADK-native, no MCP export)
+# Requires: pip install sdc-agents[vertex-ai-search]
+# Requires: GCP Application Default Credentials
+vertex_ai_search:
+  enabled: false
+  data_store_id: "projects/${GCP_PROJECT}/locations/global/collections/default_collection/dataStores/${VAS_DATA_STORE}"
+  max_results: 10
 
 output:
   directory: "./output"

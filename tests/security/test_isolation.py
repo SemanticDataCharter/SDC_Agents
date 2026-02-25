@@ -241,10 +241,55 @@ async def test_unknown_csv_datasource_raises_keyerror(security_config):
 # --- No cross-scope tool leakage ---
 
 
-async def test_no_tool_name_overlap():
-    """Tool names across all 8 toolsets are disjoint."""
+async def test_semantic_discovery_only_exposes_search_tool():
+    """Semantic Discovery toolset has exactly 1 tool, no cross-scope leakage."""
+    from unittest.mock import MagicMock, patch
+
+    from sdc_agents.toolsets.semantic_discovery import SemanticDiscoveryToolset
+
     config = SDCAgentsConfig(
         sdcstudio={"base_url": "https://test.local"},
+        vertex_ai_search={
+            "enabled": True,
+            "data_store_id": (
+                "projects/test/locations/global/dataStores/test"
+            ),
+        },
+    )
+    with patch(
+        "sdc_agents.toolsets.semantic_discovery.VertexAiSearchTool"
+    ) as MockVAS:
+        mock_tool = MagicMock()
+        mock_tool.name = "vertex_ai_search"
+        MockVAS.return_value = mock_tool
+
+        toolset = SemanticDiscoveryToolset(config=config)
+        tools = await toolset.get_tools()
+        names = {t.name for t in tools}
+        assert names == {"vertex_ai_search"}
+        # No other toolset tools
+        assert not names & {
+            "catalog_list_schemas",
+            "introspect_sql",
+            "generate_instance",
+            "ingest_knowledge_source",
+        }
+
+
+async def test_no_tool_name_overlap():
+    """Tool names across all 9 toolsets are disjoint."""
+    from unittest.mock import MagicMock, patch
+
+    from sdc_agents.toolsets.semantic_discovery import SemanticDiscoveryToolset
+
+    config = SDCAgentsConfig(
+        sdcstudio={"base_url": "https://test.local"},
+        vertex_ai_search={
+            "enabled": True,
+            "data_store_id": (
+                "projects/test/locations/global/dataStores/test"
+            ),
+        },
     )
     transport = httpx.MockTransport(lambda r: httpx.Response(200, json=[]))
     client = httpx.AsyncClient(transport=transport, base_url="https://test.local")
@@ -269,7 +314,17 @@ async def test_no_tool_name_overlap():
         "validation": {t.name for t in await validation.get_tools()},
     }
 
-    # Verify expected counts (5+5+3+3+3+5+3+4 = 31 total)
+    # Semantic discovery needs mocked VertexAiSearchTool
+    with patch(
+        "sdc_agents.toolsets.semantic_discovery.VertexAiSearchTool"
+    ) as MockVAS:
+        mock_tool = MagicMock()
+        mock_tool.name = "vertex_ai_search"
+        MockVAS.return_value = mock_tool
+        sem_disc = SemanticDiscoveryToolset(config=config)
+        all_toolsets["semantic_discovery"] = {t.name for t in await sem_disc.get_tools()}
+
+    # Verify expected counts (5+5+3+3+3+5+3+4+1 = 32 total)
     assert len(all_toolsets["assembly"]) == 4
     assert len(all_toolsets["catalog"]) == 5
     assert len(all_toolsets["distribution"]) == 5
@@ -277,6 +332,7 @@ async def test_no_tool_name_overlap():
     assert len(all_toolsets["introspect"]) == 5
     assert len(all_toolsets["knowledge"]) == 3
     assert len(all_toolsets["mapping"]) == 3
+    assert len(all_toolsets["semantic_discovery"]) == 1
     assert len(all_toolsets["validation"]) == 3
 
     # All pairwise intersections are empty

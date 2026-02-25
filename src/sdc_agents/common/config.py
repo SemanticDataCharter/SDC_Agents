@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Dict, Literal, Optional
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 _ENV_VAR_PATTERN = re.compile(r"\$\{([^}]+)\}")
 
@@ -99,10 +99,28 @@ class OutputConfig(BaseModel):
     formats: list[str] = Field(default_factory=lambda: ["xml"])
 
 
+class VertexAiSearchConfig(BaseModel):
+    """Vertex AI Search configuration for semantic component discovery."""
+
+    enabled: bool = False
+    data_store_id: Optional[str] = None
+    search_engine_id: Optional[str] = None
+    filter: Optional[str] = None
+    max_results: int = 10
+
+    @model_validator(mode="after")
+    def check_store_or_engine(self) -> "VertexAiSearchConfig":
+        if self.enabled and not self.data_store_id and not self.search_engine_id:
+            raise ValueError(
+                "vertex_ai_search requires data_store_id or search_engine_id when enabled"
+            )
+        return self
+
+
 class KnowledgeSourceConfig(BaseModel):
     """A single knowledge source definition."""
 
-    type: Literal["csv", "json", "ttl", "markdown", "txt"]
+    type: Literal["csv", "json", "ttl", "markdown", "txt", "pdf", "docx"]
     path: str
 
 
@@ -124,6 +142,7 @@ class SDCAgentsConfig(BaseModel):
     output: OutputConfig = Field(default_factory=OutputConfig)
     destinations: Dict[str, DestinationConfig] = Field(default_factory=dict)
     knowledge: KnowledgeConfig = Field(default_factory=KnowledgeConfig)
+    vertex_ai_search: VertexAiSearchConfig = Field(default_factory=VertexAiSearchConfig)
 
 
 def load_config(path: str | Path) -> SDCAgentsConfig:

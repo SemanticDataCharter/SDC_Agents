@@ -36,6 +36,9 @@ knowledge:
       type: "markdown"
       path: "tests/fixtures/sample_data/data_dictionary.md"
 
+vertex_ai_search:
+  enabled: false
+
 output:
   directory: "./test-output"
   formats:

@@ -1,6 +1,6 @@
 # Agent & Tool Reference
 
-SDC Agents provides 31 tools across 8 agents. Each agent is an ADK `LlmAgent` with a scoped `BaseToolset`.
+SDC Agents provides 32 tools across 9 agents. Each agent is an ADK `LlmAgent` with a scoped `BaseToolset`.
 
 ---
 
@@ -15,6 +15,7 @@ SDC Agents provides 31 tools across 8 agents. Each agent is an ADK `LlmAgent` wi
 | **Introspect** | 5 | None | Read-only |
 | **Knowledge** | 3 | None | Read-only (files) |
 | **Mapping** | 3 | None | None (cache only) |
+| **Semantic Discovery** | 1 | GCP (Vertex AI Search) | None (ADK-only) |
 | **Validation** | 3 | HTTPS (VaaS API, token auth) | None |
 
 ---
@@ -564,6 +565,8 @@ Bootstrap a triplestore with SDC4 ontologies and schema RDF. Idempotent — chec
 
 Ingests customer contextual resources (data dictionaries, glossaries, ontologies) into a local Chroma vector store for semantic context matching. Operates on local files only — no network access. Requires `chromadb` (`pip install sdc-agents[knowledge]`).
 
+**Supported source types**: CSV, JSON, TTL (Turtle), Markdown, plain text, PDF, and DOCX. PDF support requires `pymupdf`, DOCX support requires `python-docx` — both are included in the `[knowledge]` extra.
+
 ### `ingest_knowledge_source`
 
 Ingest a configured knowledge source into the vector store.
@@ -707,3 +710,19 @@ Assemble a data model by calling the SDCStudio Assembly API. Fail-closed: the en
   }
 }
 ```
+
+---
+
+## Semantic Discovery Agent (ADK-only)
+
+Searches a configured Vertex AI Search data store for semantically relevant SDC4 resources and catalog components. This agent is **ADK-native only** — it cannot be served via MCP because `VertexAiSearchTool` requires a non-None `ToolContext` for execution.
+
+Requires `google-cloud-aiplatform` (`pip install sdc-agents[vertex-ai-search]`) and GCP Application Default Credentials.
+
+### `vertex_ai_search`
+
+Search the configured Vertex AI Search data store for relevant documents.
+
+This tool is provided by ADK's built-in `VertexAiSearchTool`. The query is a natural language search string. Results include document metadata and relevance scores from the configured data store.
+
+**Configuration**: Set `vertex_ai_search.enabled: true` and provide `data_store_id` or `search_engine_id` in `sdc-agents.yaml`. See [Configuration Reference](configuration.md#vertex_ai_search).

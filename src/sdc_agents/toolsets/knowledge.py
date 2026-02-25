@@ -22,6 +22,16 @@ try:
 except ImportError:
     chromadb = None  # type: ignore[assignment]
 
+try:
+    import pymupdf
+except ImportError:
+    pymupdf = None  # type: ignore[assignment]
+
+try:
+    import docx as python_docx
+except ImportError:
+    python_docx = None  # type: ignore[assignment]
+
 
 class KnowledgeToolset(BaseToolset):
     """Toolset for ingesting and querying customer knowledge sources."""
@@ -60,6 +70,30 @@ class KnowledgeToolset(BaseToolset):
         path = Path(source_path)
         if not path.exists():
             raise FileNotFoundError(f"Knowledge source not found: {source_path}")
+
+        # Binary formats — must be handled before read_text()
+        if source_type == "pdf":
+            if pymupdf is None:
+                raise ImportError(
+                    "pymupdf is required for PDF knowledge sources. "
+                    "Install it with: pip install sdc-agents[knowledge]"
+                )
+            doc = pymupdf.open(source_path)
+            text = ""
+            for page in doc:
+                text += page.get_text()
+            doc.close()
+            return self._chunk_text(text)
+
+        if source_type == "docx":
+            if python_docx is None:
+                raise ImportError(
+                    "python-docx is required for DOCX knowledge sources. "
+                    "Install it with: pip install sdc-agents[knowledge]"
+                )
+            doc = python_docx.Document(source_path)
+            text = "\n\n".join(para.text for para in doc.paragraphs if para.text.strip())
+            return self._chunk_text(text)
 
         content = path.read_text(encoding="utf-8")
 
