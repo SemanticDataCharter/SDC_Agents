@@ -41,6 +41,14 @@ datasources:
     database: "clinical"                        # MongoDB database name
     collection: "lab_results"                   # MongoDB collection name
 
+  # Cloud data platforms — use type: sql with the platform's SQLAlchemy driver
+  snowflake_warehouse:
+    type: "sql"
+    connection_string: "snowflake://${SNOWFLAKE_USER}:${SNOWFLAKE_PASSWORD}@${SNOWFLAKE_ACCOUNT}/${SNOWFLAKE_DATABASE}/${SNOWFLAKE_SCHEMA}?warehouse=${SNOWFLAKE_WAREHOUSE}"
+  databricks_warehouse:
+    type: "sql"
+    connection_string: "databricks://token:${DATABRICKS_TOKEN}@${DATABRICKS_HOST}:443/${DATABRICKS_CATALOG}.${DATABRICKS_SCHEMA}?http_path=${DATABRICKS_HTTP_PATH}"
+
 # Output settings
 output:
   directory: "./output"    # Directory for generated XML instances and packages
@@ -216,6 +224,76 @@ destinations:
 ```
 
 This enables all 6 agents: Catalog discovery, Introspect from CSV + SQL, Mapping, Generation, Validation + signing via VaaS, and Distribution to Fuseki + filesystem archive.
+
+---
+
+## Cloud Data Platforms
+
+The `sql` datasource type uses SQLAlchemy, so any platform with a SQLAlchemy-compatible driver works with `introspect_sql` out of the box. Install the driver, set the connection string, and the Introspect Agent can read your data.
+
+### Snowflake
+
+```bash
+pip install snowflake-sqlalchemy
+```
+
+```yaml
+datasources:
+  snowflake_warehouse:
+    type: sql
+    connection_string: "snowflake://${SNOWFLAKE_USER}:${SNOWFLAKE_PASSWORD}@${SNOWFLAKE_ACCOUNT}/${SNOWFLAKE_DATABASE}/${SNOWFLAKE_SCHEMA}?warehouse=${SNOWFLAKE_WAREHOUSE}"
+```
+
+**Connection string format:** `snowflake://<user>:<password>@<account>/<database>/<schema>?warehouse=<warehouse>`
+
+Set the environment variables:
+
+```bash
+export SNOWFLAKE_USER="my_user"
+export SNOWFLAKE_PASSWORD="my_password"
+export SNOWFLAKE_ACCOUNT="xy12345.us-east-1"    # Account identifier
+export SNOWFLAKE_DATABASE="ANALYTICS"
+export SNOWFLAKE_SCHEMA="PUBLIC"
+export SNOWFLAKE_WAREHOUSE="COMPUTE_WH"
+```
+
+### Databricks
+
+```bash
+pip install databricks-sql-connector sqlalchemy-databricks
+```
+
+```yaml
+datasources:
+  databricks_warehouse:
+    type: sql
+    connection_string: "databricks://token:${DATABRICKS_TOKEN}@${DATABRICKS_HOST}:443/${DATABRICKS_CATALOG}.${DATABRICKS_SCHEMA}?http_path=${DATABRICKS_HTTP_PATH}"
+```
+
+**Connection string format:** `databricks://token:<token>@<host>:443/<catalog>.<schema>?http_path=<http_path>`
+
+Set the environment variables:
+
+```bash
+export DATABRICKS_TOKEN="dapi..."                              # Personal access token
+export DATABRICKS_HOST="adb-1234567890.12.azuredatabricks.net" # Workspace URL (no https://)
+export DATABRICKS_CATALOG="main"
+export DATABRICKS_SCHEMA="default"
+export DATABRICKS_HTTP_PATH="/sql/1.0/warehouses/abc123"       # SQL warehouse HTTP path
+```
+
+### Driver Reference
+
+| Platform | Driver Package | Connection Prefix |
+|---|---|---|
+| PostgreSQL | `asyncpg` (included) | `postgresql+asyncpg://` |
+| MySQL | `aiomysql` | `mysql+aiomysql://` |
+| SQL Server | `aioodbc` | `mssql+aioodbc://` |
+| SQLite | (built-in) | `sqlite+aiosqlite://` |
+| Snowflake | `snowflake-sqlalchemy` | `snowflake://` |
+| Databricks | `databricks-sql-connector`, `sqlalchemy-databricks` | `databricks://` |
+
+Any SQLAlchemy-compatible driver works. The Introspect Agent enforces read-only access regardless of the underlying platform — only SELECT queries are permitted.
 
 ---
 

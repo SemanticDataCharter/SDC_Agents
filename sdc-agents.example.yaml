@@ -32,6 +32,16 @@ datasources:
     database: "clinical"
     collection: "lab_results"
 
+  # --- Cloud data platforms (pip install the driver, then use type: sql) ---
+  # Snowflake:  pip install snowflake-sqlalchemy
+  snowflake_warehouse:
+    type: "sql"
+    connection_string: "snowflake://${SNOWFLAKE_USER}:${SNOWFLAKE_PASSWORD}@${SNOWFLAKE_ACCOUNT}/${SNOWFLAKE_DATABASE}/${SNOWFLAKE_SCHEMA}?warehouse=${SNOWFLAKE_WAREHOUSE}"
+  # Databricks:  pip install databricks-sql-connector sqlalchemy-databricks
+  databricks_warehouse:
+    type: "sql"
+    connection_string: "databricks://token:${DATABRICKS_TOKEN}@${DATABRICKS_HOST}:443/${DATABRICKS_CATALOG}.${DATABRICKS_SCHEMA}?http_path=${DATABRICKS_HTTP_PATH}"
+
 output:
   directory: "./output"
   formats:
