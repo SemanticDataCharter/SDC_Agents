@@ -11,7 +11,7 @@ For installation and quick start, see the [README](../../README.md#quick-start).
 ```
 ┌──────────────┐     ┌──────────────────┐     ┌──────────────┐
 │ Catalog Agent│     │ Introspect Agent │     │              │
-│  (5 tools)   │     │    (4 tools)     │     │              │
+│  (5 tools)   │     │    (5 tools)     │     │              │
 │              │     │                  │     │              │
 │ Discovers    │     │ Examines your    │     │ Mapping Agent│
 │ published    │     │ datasources      │     │  (3 tools)   │
@@ -107,7 +107,7 @@ The cache root defaults to `.sdc-cache` but is configurable via the `cache.root`
 | Document | Description |
 |---|---|
 | **[Configuration Reference](configuration.md)** | All config fields, annotated YAML, environment variable substitution, working examples |
-| **[Agent & Tool Reference](tool-reference.md)** | All 23 tools across 6 agents — parameters, return shapes, access scopes |
+| **[Agent & Tool Reference](tool-reference.md)** | All 24 tools across 6 agents — parameters, return shapes, access scopes |
 | **[MCP Integration](mcp-integration.md)** | Serve agents as MCP servers for Claude Desktop, Cursor, and generic stdio clients |
 | **[Common Workflows](workflows.md)** | Step-by-step guides: CSV to validated XML, audit troubleshooting, triplestore bootstrap |
 

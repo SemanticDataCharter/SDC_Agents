@@ -64,7 +64,7 @@ async def test_catalog_only_exposes_catalog_tools(security_config):
 
 
 async def test_introspect_only_exposes_introspect_tools(security_config):
-    """Introspect toolset has exactly 4 introspect-scoped tools."""
+    """Introspect toolset has exactly 5 introspect-scoped tools."""
     toolset = IntrospectToolset(config=security_config)
     tools = await toolset.get_tools()
     names = {t.name for t in tools}
@@ -73,6 +73,7 @@ async def test_introspect_only_exposes_introspect_tools(security_config):
         "introspect_csv",
         "introspect_json",
         "introspect_mongodb",
+        "introspect_bigquery",
     }
     # No catalog or mapping tools
     assert not names & {"catalog_list_schemas", "mapping_suggest"}
@@ -221,9 +222,9 @@ async def test_no_tool_name_overlap():
         "distribution": {t.name for t in await distribution.get_tools()},
     }
 
-    # Verify expected counts (5+4+3+3+3+5 = 23 total)
+    # Verify expected counts (5+5+3+3+3+5 = 24 total)
     assert len(all_toolsets["catalog"]) == 5
-    assert len(all_toolsets["introspect"]) == 4
+    assert len(all_toolsets["introspect"]) == 5
     assert len(all_toolsets["mapping"]) == 3
     assert len(all_toolsets["generator"]) == 3
     assert len(all_toolsets["validation"]) == 3

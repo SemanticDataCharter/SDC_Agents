@@ -41,6 +41,20 @@ datasources:
     database: "clinical"                        # MongoDB database name
     collection: "lab_results"                   # MongoDB collection name
 
+  # BigQuery — dedicated type (no async SQLAlchemy support); uses ADC for auth
+  analytics_bq:
+    type: "bigquery"
+    project: "my-gcp-project"                    # GCP project ID
+    dataset: "clinical_data"                      # BigQuery dataset name
+
+  # Cloud data platforms — use type: sql with the platform's SQLAlchemy driver
+  snowflake_warehouse:
+    type: "sql"
+    connection_string: "snowflake://${SNOWFLAKE_USER}:${SNOWFLAKE_PASSWORD}@${SNOWFLAKE_ACCOUNT}/${SNOWFLAKE_DATABASE}/${SNOWFLAKE_SCHEMA}?warehouse=${SNOWFLAKE_WAREHOUSE}"
+  databricks_warehouse:
+    type: "sql"
+    connection_string: "databricks://token:${DATABRICKS_TOKEN}@${DATABRICKS_HOST}:443/${DATABRICKS_CATALOG}.${DATABRICKS_SCHEMA}?http_path=${DATABRICKS_HTTP_PATH}"
+
 # Output settings
 output:
   directory: "./output"    # Directory for generated XML instances and packages
@@ -105,12 +119,14 @@ A named dictionary. Each entry defines a datasource the Introspect Agent can rea
 
 | Field | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `type` | str | Yes | — | Datasource type: `sql`, `csv`, `json`, or `mongodb` |
+| `type` | str | Yes | — | Datasource type: `sql`, `csv`, `json`, `mongodb`, or `bigquery` |
 | `connection_string` | str | No | `null` | SQLAlchemy async URI (for `sql`) or MongoDB URI (for `mongodb`) |
 | `path` | str | No | `null` | File path (for `csv` or `json` types) |
 | `jsonpath` | str | No | `null` | JSONPath expression to extract records from JSON files |
 | `database` | str | No | `null` | MongoDB database name |
 | `collection` | str | No | `null` | MongoDB collection name |
+| `project` | str | No | `null` | GCP project ID (for `bigquery` type) |
+| `dataset` | str | No | `null` | BigQuery dataset name |
 
 **Required fields by type:**
 
@@ -120,6 +136,7 @@ A named dictionary. Each entry defines a datasource the Introspect Agent can rea
 | `csv` | `path` |
 | `json` | `path` |
 | `mongodb` | `connection_string`, `database`, `collection` |
+| `bigquery` | `project` |
 
 ### `output`
 
@@ -216,6 +233,99 @@ destinations:
 ```
 
 This enables all 6 agents: Catalog discovery, Introspect from CSV + SQL, Mapping, Generation, Validation + signing via VaaS, and Distribution to Fuseki + filesystem archive.
+
+---
+
+## Cloud Data Platforms
+
+The `sql` datasource type uses SQLAlchemy, so any platform with a SQLAlchemy-compatible driver works with `introspect_sql` out of the box. Install the driver, set the connection string, and the Introspect Agent can read your data.
+
+### BigQuery
+
+BigQuery uses a dedicated `bigquery` datasource type (not `sql`) because `sqlalchemy-bigquery` does not support async engines. Authentication uses [Application Default Credentials (ADC)](https://cloud.google.com/docs/authentication/application-default-credentials).
+
+```bash
+pip install sdc-agents[bigquery]
+```
+
+```yaml
+datasources:
+  analytics_bq:
+    type: "bigquery"
+    project: "my-gcp-project"
+    dataset: "clinical_data"
+```
+
+Set up ADC for authentication:
+
+```bash
+gcloud auth application-default login
+# or set GOOGLE_APPLICATION_CREDENTIALS to a service account key file
+```
+
+### Snowflake
+
+```bash
+pip install snowflake-sqlalchemy
+```
+
+```yaml
+datasources:
+  snowflake_warehouse:
+    type: sql
+    connection_string: "snowflake://${SNOWFLAKE_USER}:${SNOWFLAKE_PASSWORD}@${SNOWFLAKE_ACCOUNT}/${SNOWFLAKE_DATABASE}/${SNOWFLAKE_SCHEMA}?warehouse=${SNOWFLAKE_WAREHOUSE}"
+```
+
+**Connection string format:** `snowflake://<user>:<password>@<account>/<database>/<schema>?warehouse=<warehouse>`
+
+Set the environment variables:
+
+```bash
+export SNOWFLAKE_USER="my_user"
+export SNOWFLAKE_PASSWORD="my_password"
+export SNOWFLAKE_ACCOUNT="xy12345.us-east-1"    # Account identifier
+export SNOWFLAKE_DATABASE="ANALYTICS"
+export SNOWFLAKE_SCHEMA="PUBLIC"
+export SNOWFLAKE_WAREHOUSE="COMPUTE_WH"
+```
+
+### Databricks
+
+```bash
+pip install databricks-sql-connector sqlalchemy-databricks
+```
+
+```yaml
+datasources:
+  databricks_warehouse:
+    type: sql
+    connection_string: "databricks://token:${DATABRICKS_TOKEN}@${DATABRICKS_HOST}:443/${DATABRICKS_CATALOG}.${DATABRICKS_SCHEMA}?http_path=${DATABRICKS_HTTP_PATH}"
+```
+
+**Connection string format:** `databricks://token:<token>@<host>:443/<catalog>.<schema>?http_path=<http_path>`
+
+Set the environment variables:
+
+```bash
+export DATABRICKS_TOKEN="dapi..."                              # Personal access token
+export DATABRICKS_HOST="adb-1234567890.12.azuredatabricks.net" # Workspace URL (no https://)
+export DATABRICKS_CATALOG="main"
+export DATABRICKS_SCHEMA="default"
+export DATABRICKS_HTTP_PATH="/sql/1.0/warehouses/abc123"       # SQL warehouse HTTP path
+```
+
+### Driver Reference
+
+| Platform | Driver Package | Connection Prefix |
+|---|---|---|
+| PostgreSQL | `asyncpg` (included) | `postgresql+asyncpg://` |
+| MySQL | `aiomysql` | `mysql+aiomysql://` |
+| SQL Server | `aioodbc` | `mssql+aioodbc://` |
+| SQLite | (built-in) | `sqlite+aiosqlite://` |
+| Snowflake | `snowflake-sqlalchemy` | `snowflake://` |
+| Databricks | `databricks-sql-connector`, `sqlalchemy-databricks` | `databricks://` |
+
+Any SQLAlchemy-compatible driver works. The Introspect Agent enforces read-only access regardless of the underlying platform — only SELECT queries are permitted.
 
 ---
 

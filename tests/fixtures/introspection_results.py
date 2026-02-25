@@ -149,3 +149,49 @@ def make_mongodb_introspection() -> dict:
         ],
         "document_count": 100,
     }
+
+
+def make_bigquery_introspection() -> dict:
+    """Sample BigQuery introspection result."""
+    return {
+        "datasource": "analytics_bq",
+        "type": "bigquery",
+        "dataset": "clinical_data",
+        "table": "lab_results",
+        "columns": [
+            {
+                "name": "test_id",
+                "inferred_type": "integer",
+                "sample_values": ["1", "2", "3"],
+            },
+            {
+                "name": "patient_name",
+                "inferred_type": "string",
+                "sample_values": ["Alice", "Bob", "Carol"],
+            },
+            {
+                "name": "result_value",
+                "inferred_type": "decimal",
+                "sample_values": ["98.6", "120.5", "85.0"],
+            },
+            {
+                "name": "is_critical",
+                "inferred_type": "boolean",
+                "sample_values": ["True", "False", "True"],
+            },
+            {
+                "name": "collected_date",
+                "inferred_type": "date",
+                "sample_values": ["2026-01-15", "2026-01-16", "2026-01-17"],
+            },
+            {
+                "name": "collected_at",
+                "inferred_type": "datetime",
+                "sample_values": [
+                    "2026-01-15 08:30:00+00:00",
+                    "2026-01-16 09:15:00+00:00",
+                ],
+            },
+        ],
+        "row_count": 1500,
+    }

@@ -16,6 +16,12 @@ aligned with SDC Generation 4.
 
 ## [Unreleased]
 
+### Added
+- **`introspect_bigquery` tool** for Introspect Agent — BigQuery table/dataset structure extraction via `google-cloud-bigquery`, using `asyncio.to_thread()` for async compatibility. BigQuery type mapping (STRING→string, INT64→integer, FLOAT64→decimal, BOOL→boolean, DATE→date, DATETIME/TIMESTAMP→datetime, TIME→time, STRUCT/RECORD→object, ARRAY→array, etc.)
+- `bigquery` datasource type in configuration with `project` (GCP project ID) and `dataset` fields
+- Optional `google-cloud-bigquery>=3` dependency (`pip install sdc-agents[bigquery]`)
+- Introspect Agent: 4→5 tools, total tools: 23→24 across 6 agents
+
 ### Changed
 - **Architecture revision: MCP-first → ADK-native** — Agents are now ADK `LlmAgent` instances with scoped `BaseToolset` implementations. Tools are Python functions wrapped in `FunctionTool` with type hints and docstrings (ADK derives schemas from these). MCP is retained as a secondary compatibility export via `adk_to_mcp_tool_type`.
 - D1 decision revised: "No orchestration — SDC provides primitives only" → "ADK-native orchestration with MCP compatibility"

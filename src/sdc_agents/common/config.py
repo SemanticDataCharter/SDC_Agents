@@ -66,12 +66,14 @@ class AuditConfig(BaseModel):
 class DatasourceConfig(BaseModel):
     """A single datasource definition."""
 
-    type: Literal["sql", "csv", "json", "mongodb"]
+    type: Literal["sql", "csv", "json", "mongodb", "bigquery"]
     connection_string: Optional[str] = None
     path: Optional[str] = None
     jsonpath: Optional[str] = None  # JSONPath expression for JSON datasources
     database: Optional[str] = None  # MongoDB database name
     collection: Optional[str] = None  # MongoDB collection name
+    project: Optional[str] = None  # GCP project ID for BigQuery
+    dataset: Optional[str] = None  # BigQuery dataset name
 
 
 class DestinationConfig(BaseModel):
