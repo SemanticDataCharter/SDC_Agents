@@ -1675,11 +1675,11 @@ This means SDC_Agents Phases 1–4 are developed to completion before SDCStudio 
 **Delivered**:
 - **Generator Agent**: `GeneratorToolset(BaseToolset)` with 3 tools (`generate_instance`, `generate_batch`, `generate_preview`), skeleton-based XML generation using `{ct_id}_skeleton.xml` + `{ct_id}_field_mapping.json` from cache, placeholder substitution, optional element pruning
 - **Validation Agent**: `ValidationToolset(BaseToolset)` with 3 tools (`validate_instance`, `sign_instance`, `validate_batch`), VaaS API integration with path confinement + token auth, artifact package (.pkg.zip) support
-- **Introspect Agent extensions**: 2→4 tools (`introspect_json` with JSONPath extraction, `introspect_mongodb` with BSON-to-SDC4 type mapping)
+- **Introspect Agent extensions**: 2→5 tools (`introspect_json` with JSONPath extraction, `introspect_mongodb` with BSON-to-SDC4 type mapping, `introspect_bigquery` with BigQuery schema extraction via `asyncio.to_thread`)
 - Config additions: `api_key` (VaaS token), `toolbox_url` (MCP Toolbox), `jsonpath` (JSON datasource), `database`/`collection` (MongoDB datasource)
 - Cache additions: `skeleton_path()`, `field_mapping_path()` helpers
 - Dependencies: motor>=3.6, jsonpath-ng>=1.6, mongomock (dev), toolbox-adk (optional)
-- Security tests: 5 toolsets with disjoint tool name sets (5+4+3+3+3 = 18 total tools), Validation path confinement, Generator read-only datasource access, VaaS token redacted in audit log
+- Security tests: 5 toolsets with disjoint tool name sets (5+5+3+3+3 = 19 total tools), Validation path confinement, Generator read-only datasource access, VaaS token redacted in audit log
 
 **Implementation notes**:
 - Batch tools (`generate_batch`, `validate_batch`) use regular `FunctionTool` (not `LongRunningFunctionTool`). ADK's `LongRunningFunctionTool` requires polling infrastructure; deferred until needed.
@@ -1700,7 +1700,7 @@ This means SDC_Agents Phases 1–4 are developed to completion before SDCStudio 
 - REST API connector — configurable POST/PUT with custom headers
 - Filesystem connector — path pattern substitution (`{ct_id}`, `{instance_id}`) with optional directory creation
 - Destination health checks — `list_destinations` probes each endpoint (GET/HEAD with timeout), reports `reachable`/`unreachable`
-- Security tests: 6 toolsets with disjoint tool name sets (5+4+3+3+3+5 = 23 total tools), Distribution path confinement, destination credential redaction in audit log
+- Security tests: 6 toolsets with disjoint tool name sets (5+5+3+3+3+5 = 24 total tools), Distribution path confinement, destination credential redaction in audit log
 
 **Implementation notes**:
 - All connectors use httpx — no neo4j-driver or other driver-specific dependencies.
