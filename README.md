@@ -15,6 +15,8 @@ Each agent is an ADK `LlmAgent` with a narrowly scoped `BaseToolset`, auditable 
 
 **MCP compatibility**: Each toolset can also be exported as an MCP server for framework-agnostic integration with non-ADK clients.
 
+![From Craftsman to Factory: Traditional RAG/ETL vs Axius SDC pipeline](docs/images/craftsman-to-factory.png)
+
 ---
 
 ## Architecture: Nine Agents
