@@ -247,9 +247,7 @@ async def test_get_tools_returns_three(validation_config: SDCAgentsConfig):
 # --- HTTP 402 Insufficient Funds ---
 
 
-async def test_validate_instance_402(
-    validation_config: SDCAgentsConfig, sample_xml_file: Path
-):
+async def test_validate_instance_402(validation_config: SDCAgentsConfig, sample_xml_file: Path):
     """validate_instance raises InsufficientFundsError on HTTP 402."""
     transport = _make_mock_transport(make_insufficient_funds_response, status_code=402)
     client = httpx.AsyncClient(transport=transport, base_url="https://vaas.test.local")
@@ -262,9 +260,7 @@ async def test_validate_instance_402(
     assert exc_info.value.balance_remaining == "0.0000"
 
 
-async def test_sign_instance_402(
-    validation_config: SDCAgentsConfig, sample_xml_file: Path
-):
+async def test_sign_instance_402(validation_config: SDCAgentsConfig, sample_xml_file: Path):
     """sign_instance raises InsufficientFundsError on HTTP 402."""
     transport = _make_mock_transport(make_insufficient_funds_response, status_code=402)
     client = httpx.AsyncClient(transport=transport, base_url="https://vaas.test.local")
