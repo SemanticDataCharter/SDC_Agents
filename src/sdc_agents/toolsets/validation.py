@@ -17,6 +17,7 @@ from google.adk.tools.base_toolset import BaseToolset
 from sdc_agents.common.audit import AuditLogger
 from sdc_agents.common.cache import CacheManager
 from sdc_agents.common.config import SDCAgentsConfig
+from sdc_agents.common.exceptions import InsufficientFundsError
 
 
 class ValidationToolset(BaseToolset):
@@ -88,6 +89,36 @@ class ValidationToolset(BaseToolset):
             )
         return resolved
 
+    @staticmethod
+    def _check_402(resp: httpx.Response) -> None:
+        """Raise InsufficientFundsError if the response is HTTP 402."""
+        if resp.status_code == 402:
+            ct = resp.headers.get("content-type", "")
+            data = resp.json() if ct.startswith("application/json") else {}
+            est = resp.headers.get(
+                "X-SDC-Estimated-Cost", data.get("estimated_cost", ""),
+            )
+            bal = resp.headers.get(
+                "X-SDC-Balance-Remaining", data.get("balance_remaining", ""),
+            )
+            raise InsufficientFundsError(
+                message=data.get("detail", "Insufficient wallet balance."),
+                estimated_cost=est,
+                balance_remaining=bal,
+            )
+
+    @staticmethod
+    def _extract_wallet_headers(resp: httpx.Response) -> dict:
+        """Extract wallet-related headers from a successful response."""
+        info = {}
+        est = resp.headers.get("X-SDC-Estimated-Cost")
+        bal = resp.headers.get("X-SDC-Balance-Remaining")
+        if est:
+            info["estimated_cost"] = est
+        if bal:
+            info["balance_remaining"] = bal
+        return info
+
     async def validate_instance(
         self,
         xml_path: str,
@@ -116,6 +147,7 @@ class ValidationToolset(BaseToolset):
             content=xml_content,
             headers={"Content-Type": "application/xml"},
         )
+        self._check_402(resp)
         resp.raise_for_status()
 
         data = resp.json()
@@ -128,6 +160,7 @@ class ValidationToolset(BaseToolset):
             "semantic_errors": data.get("semantic_errors", 0),
             "recovered": data.get("recovered", False),
             "errors": data.get("errors", []),
+            **self._extract_wallet_headers(resp),
         }
 
         # Write recovered XML if provided
@@ -191,6 +224,7 @@ class ValidationToolset(BaseToolset):
             content=xml_content,
             headers={"Content-Type": "application/xml"},
         )
+        self._check_402(resp)
         resp.raise_for_status()
 
         data = resp.json()
@@ -200,6 +234,7 @@ class ValidationToolset(BaseToolset):
             "signed": data.get("signed", False),
             "signature": data.get("signature", {}),
             "verification": data.get("verification", {}),
+            **self._extract_wallet_headers(resp),
         }
 
         # Write signed XML if provided
@@ -257,7 +292,12 @@ class ValidationToolset(BaseToolset):
 
         results = []
         failed = 0
-        for xml_file in xml_files:
+        halted = False
+        halt_reason = ""
+        pending_files: list[str] = []
+        wallet_info: dict = {}
+
+        for i, xml_file in enumerate(xml_files):
             try:
                 if sign:
                     r = await self.sign_instance(xml_path=str(xml_file), package=package)
@@ -274,6 +314,15 @@ class ValidationToolset(BaseToolset):
                 results.append(entry)
                 if not r.get("valid", False):
                     failed += 1
+            except InsufficientFundsError as exc:
+                halted = True
+                halt_reason = "insufficient_funds"
+                wallet_info = {
+                    "estimated_cost": exc.estimated_cost,
+                    "balance_remaining": exc.balance_remaining,
+                }
+                pending_files = [str(f) for f in xml_files[i:]]
+                break
             except Exception as exc:
                 results.append(
                     {
@@ -285,11 +334,21 @@ class ValidationToolset(BaseToolset):
                 )
                 failed += 1
 
-        result = {
+        result: dict = {
             "count": len(results),
             "results": results,
             "failed": failed,
         }
+
+        if halted:
+            result["halted"] = True
+            result["halt_reason"] = halt_reason
+            result["pending_files"] = pending_files
+            result["wallet"] = wallet_info
+            result["resume_hint"] = (
+                "Fund your wallet, then re-run validate_batch. "
+                "Already-processed files will be skipped (recovered/signed variants exist)."
+            )
 
         self._audit.log(
             agent="validation",
