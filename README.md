@@ -23,7 +23,7 @@ Each agent is an ADK `LlmAgent` with a narrowly scoped `BaseToolset`, auditable 
 
 | Agent | Purpose | Network | Datasource Access |
 |---|---|---|---|
-| **Catalog Agent** | Discover published SDC4 schemas and download artifacts from SDCStudio | HTTPS (no auth) | None |
+| **Catalog Agent** | Discover published SDC4 schemas and download artifacts from SDCStudio | HTTPS (optional token auth) | None |
 | **Introspect Agent** | Examine customer datasources and extract structure (read-only) | None | Read-only |
 | **Mapping Agent** | Suggest and manage column-to-component mappings | None | None |
 | **Generator Agent** | Produce SDC4 XML instances from mapped data | None | Read-only |
@@ -74,8 +74,10 @@ Introspect Agent → .sdc-cache/introspections/ ─┤
 
 SDC Agents consumes two sets of endpoints from [SDCStudio](https://github.com/Axius-SDC/SDCStudio):
 
-- **Catalog API** (public, no auth) — schema discovery, component trees, skeleton templates, schema-level RDF, reference ontologies. The Catalog Agent uses ADK's `OpenAPIToolset` to auto-generate bindings from SDCStudio's existing OpenAPI spec.
+- **Catalog API** (public, optional token auth) — schema discovery, component trees, skeleton templates, schema-level RDF, reference ontologies
 - **VaaS API** (token auth) — XML validation, signing, artifact package generation
+
+> **Authenticated Catalog Lookups**: When an API key is provided, catalog search results are filtered according to the Modeler's project preferences configured in SDCStudio. If the Modeler's `prj_filter` setting is enabled (the default), results are scoped to their default project. Without an API key, the catalog returns all published public schemas. This means the same `catalog_list_schemas` tool returns personalized results for authenticated users and broad results for anonymous browsing, with no change to the tool interface.
 
 See [docs/dev/SDC_AGENTS_PRD.md](docs/dev/SDC_AGENTS_PRD.md) for the full API contract and agent specifications.
 
@@ -101,7 +103,7 @@ Copy `sdc-agents.example.yaml` to `sdc-agents.yaml` and fill in values:
 ```yaml
 sdcstudio:
   base_url: "https://sdcstudio.example.com"
-  api_key: "${SDC_API_KEY}"          # VaaS token (Validation Agent only)
+  api_key: "${SDC_API_KEY}"          # Token auth (Catalog preferences + VaaS validation)
 
 cache:
   root: ".sdc-cache"
@@ -292,7 +294,7 @@ pytest tests/security/
 **Common infrastructure**:
 - Pydantic config with `${VAR}` substitution (fail closed), append-only JSONL audit logger with credential redaction, cache manager with path helpers
 
-**CatalogToolset** (5 tools): `catalog_list_schemas`, `catalog_get_schema`, `catalog_download_schema_rdf`, `catalog_download_skeleton`, `catalog_download_ontologies` — httpx async, cache-first for immutable schemas
+**CatalogToolset** (5 tools): `catalog_list_schemas`, `catalog_get_schema`, `catalog_download_schema_rdf`, `catalog_download_skeleton`, `catalog_download_ontologies` — httpx async, cache-first for immutable schemas, optional token auth for Modeler-scoped results
 
 **IntrospectToolset** (5 tools): `introspect_sql` (SELECT-only enforcement), `introspect_csv` (type inference for 10 types), `introspect_json` (JSONPath extraction), `introspect_mongodb` (BSON-to-SDC4 type mapping), `introspect_bigquery` (BigQuery schema extraction via `asyncio.to_thread`)
 

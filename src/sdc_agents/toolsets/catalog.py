@@ -2,6 +2,20 @@
 
 Provides schema discovery, download, and artifact retrieval tools.
 Cache-first for immutable schemas (keyed by ct_id).
+
+Authenticated Catalog Lookups
+-----------------------------
+When ``SDCStudioConfig.api_key`` is configured, the toolset sends an
+``Authorization: Token <key>`` header on catalog requests. SDCStudio
+resolves the API key to a Modeler and applies their project preferences:
+
+* If the Modeler's ``prj_filter`` is True (default), results are scoped
+  to their default project.
+* If ``prj_filter`` is False, results include all projects accessible
+  to that user (owned, public, and default library projects).
+
+Without an API key, catalog endpoints return all published public schemas.
+The tool interface is identical in both cases — filtering is server-side.
 """
 
 from __future__ import annotations

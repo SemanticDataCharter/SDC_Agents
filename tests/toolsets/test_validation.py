@@ -9,9 +9,11 @@ import httpx
 import pytest
 
 from sdc_agents.common.config import SDCAgentsConfig
+from sdc_agents.common.exceptions import InsufficientFundsError
 from sdc_agents.toolsets.validation import ValidationToolset
 from tests.conftest import read_audit_records
 from tests.fixtures.validation_responses import (
+    make_insufficient_funds_response,
     make_sign_response,
     make_validation_failure,
     make_validation_success,
@@ -240,3 +242,100 @@ async def test_get_tools_returns_three(validation_config: SDCAgentsConfig):
     assert len(tools) == 3
     names = {t.name for t in tools}
     assert names == {"validate_instance", "sign_instance", "validate_batch"}
+
+
+# --- HTTP 402 Insufficient Funds ---
+
+
+async def test_validate_instance_402(validation_config: SDCAgentsConfig, sample_xml_file: Path):
+    """validate_instance raises InsufficientFundsError on HTTP 402."""
+    transport = _make_mock_transport(make_insufficient_funds_response, status_code=402)
+    client = httpx.AsyncClient(transport=transport, base_url="https://vaas.test.local")
+    toolset = ValidationToolset(config=validation_config, http_client=client)
+
+    with pytest.raises(InsufficientFundsError) as exc_info:
+        await toolset.validate_instance(xml_path=str(sample_xml_file))
+
+    assert exc_info.value.estimated_cost == "0.001"
+    assert exc_info.value.balance_remaining == "0.0000"
+
+
+async def test_sign_instance_402(validation_config: SDCAgentsConfig, sample_xml_file: Path):
+    """sign_instance raises InsufficientFundsError on HTTP 402."""
+    transport = _make_mock_transport(make_insufficient_funds_response, status_code=402)
+    client = httpx.AsyncClient(transport=transport, base_url="https://vaas.test.local")
+    toolset = ValidationToolset(config=validation_config, http_client=client)
+
+    with pytest.raises(InsufficientFundsError) as exc_info:
+        await toolset.sign_instance(xml_path=str(sample_xml_file))
+
+    assert exc_info.value.estimated_cost == "0.001"
+    assert exc_info.value.balance_remaining == "0.0000"
+
+
+async def test_validate_batch_halts_on_402(
+    validation_config: SDCAgentsConfig, sample_xml_file: Path
+):
+    """Batch validation halts with pending files on 402."""
+    output_dir = Path(validation_config.output.directory)
+    # Create two more XML files (3 total)
+    (output_dir / "clxyz123abc_1.xml").write_text("<sdc4:dm-clxyz123abc>2</sdc4:dm-clxyz123abc>")
+    (output_dir / "clxyz123abc_2.xml").write_text("<sdc4:dm-clxyz123abc>3</sdc4:dm-clxyz123abc>")
+
+    call_count = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal call_count
+        call_count += 1
+        if call_count <= 1:
+            # First file succeeds
+            return httpx.Response(200, json=make_validation_success())
+        # Second file: insufficient funds
+        return httpx.Response(
+            402,
+            json=make_insufficient_funds_response(),
+            headers={
+                "Content-Type": "application/json",
+                "X-SDC-Estimated-Cost": "0.001",
+                "X-SDC-Balance-Remaining": "0.0000",
+            },
+        )
+
+    transport = httpx.MockTransport(handler)
+    client = httpx.AsyncClient(transport=transport, base_url="https://vaas.test.local")
+    toolset = ValidationToolset(config=validation_config, http_client=client)
+
+    result = await toolset.validate_batch()
+
+    assert result["halted"] is True
+    assert result["halt_reason"] == "insufficient_funds"
+    assert result["count"] == 1  # Only first file was processed
+    assert len(result["pending_files"]) == 2  # Second and third remain
+    assert result["wallet"]["estimated_cost"] == "0.001"
+    assert result["wallet"]["balance_remaining"] == "0.0000"
+    assert "resume_hint" in result
+
+
+async def test_validate_batch_wallet_headers_surfaced(
+    validation_config: SDCAgentsConfig, sample_xml_file: Path
+):
+    """Wallet cost headers are surfaced in successful validation results."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json=make_validation_success(),
+            headers={
+                "Content-Type": "application/json",
+                "X-SDC-Estimated-Cost": "0.001",
+                "X-SDC-Balance-Remaining": "49.999",
+            },
+        )
+
+    transport = httpx.MockTransport(handler)
+    client = httpx.AsyncClient(transport=transport, base_url="https://vaas.test.local")
+    toolset = ValidationToolset(config=validation_config, http_client=client)
+
+    result = await toolset.validate_instance(xml_path=str(sample_xml_file))
+    assert result["estimated_cost"] == "0.001"
+    assert result["balance_remaining"] == "49.999"
