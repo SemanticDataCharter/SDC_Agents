@@ -96,10 +96,12 @@ class ValidationToolset(BaseToolset):
             ct = resp.headers.get("content-type", "")
             data = resp.json() if ct.startswith("application/json") else {}
             est = resp.headers.get(
-                "X-SDC-Estimated-Cost", data.get("estimated_cost", ""),
+                "X-SDC-Estimated-Cost",
+                data.get("estimated_cost", ""),
             )
             bal = resp.headers.get(
-                "X-SDC-Balance-Remaining", data.get("balance_remaining", ""),
+                "X-SDC-Balance-Remaining",
+                data.get("balance_remaining", ""),
             )
             raise InsufficientFundsError(
                 message=data.get("detail", "Insufficient wallet balance."),
