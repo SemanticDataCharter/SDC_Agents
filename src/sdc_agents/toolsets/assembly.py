@@ -3,6 +3,12 @@
 Discovers catalog components matching datasource structure, proposes
 Cluster hierarchies, selects contextual components, and calls the
 SDCStudio Assembly API to produce published data models.
+
+Supports two assembly modes:
+- **Pure reuse**: all components referenced by ct_id → synchronous (HTTP 200)
+- **Mixed**: some components need minting (label + data_type) → async (HTTP 202)
+
+Wallet-aware: raises ``InsufficientFundsError`` on HTTP 402.
 """
 
 from __future__ import annotations
@@ -19,6 +25,7 @@ from google.adk.tools.base_toolset import BaseToolset
 from sdc_agents.common.audit import AuditLogger
 from sdc_agents.common.cache import CacheManager
 from sdc_agents.common.config import SDCAgentsConfig
+from sdc_agents.common.exceptions import InsufficientFundsError
 from sdc_agents.toolsets.mapping import TYPE_COMPATIBILITY
 
 
@@ -38,7 +45,18 @@ class AssemblyToolset(BaseToolset):
         self._cache = CacheManager(config.cache.root)
         self._cache.ensure_dirs()
         self._audit = AuditLogger(config.audit.path, config.audit.log_level)
-        self._http = http_client or httpx.AsyncClient(base_url=self._base_url)
+
+        # Set up HTTP client with Token auth (consistent with VaaS)
+        if http_client:
+            self._http = http_client
+        else:
+            headers = {}
+            if config.sdcstudio.api_key:
+                headers["Authorization"] = f"Token {config.sdcstudio.api_key}"
+            self._http = httpx.AsyncClient(
+                base_url=self._base_url,
+                headers=headers,
+            )
 
     async def get_tools(self) -> list[FunctionTool]:
         return [
@@ -47,6 +65,38 @@ class AssemblyToolset(BaseToolset):
             FunctionTool(self.select_contextual_components),
             FunctionTool(self.assemble_model),
         ]
+
+    @staticmethod
+    def _check_402(resp: httpx.Response) -> None:
+        """Raise InsufficientFundsError if the response is HTTP 402."""
+        if resp.status_code == 402:
+            ct = resp.headers.get("content-type", "")
+            data = resp.json() if ct.startswith("application/json") else {}
+            est = resp.headers.get(
+                "X-SDC-Estimated-Cost",
+                data.get("estimated_cost", ""),
+            )
+            bal = resp.headers.get(
+                "X-SDC-Balance-Remaining",
+                data.get("balance_remaining", ""),
+            )
+            raise InsufficientFundsError(
+                message=data.get("detail", data.get("error", "Insufficient wallet balance.")),
+                estimated_cost=est,
+                balance_remaining=bal,
+            )
+
+    @staticmethod
+    def _extract_wallet_headers(resp: httpx.Response) -> dict:
+        """Extract wallet-related headers from a successful response."""
+        info = {}
+        est = resp.headers.get("X-SDC-Estimated-Cost")
+        bal = resp.headers.get("X-SDC-Balance-Remaining")
+        if est:
+            info["estimated_cost"] = est
+        if bal:
+            info["balance_remaining"] = bal
+        return info
 
     def _name_similarity(self, name_a: str, name_b: str) -> float:
         """Compute name similarity score between two labels."""
@@ -160,62 +210,115 @@ class AssemblyToolset(BaseToolset):
                     components.append(child)
         return components
 
+    @staticmethod
+    def _match_to_component_ref(match: dict) -> dict:
+        """Convert a component match dict to a component reference.
+
+        Matched components (with ct_id) become reuse refs (free).
+        Unmatched columns (with data_type but no ct_id) become mint refs (billable).
+        """
+        if match.get("ct_id"):
+            return {"ct_id": match["ct_id"]}
+        # Mint ref — label + data_type required
+        ref: dict = {
+            "label": match.get("column", match.get("label", "")),
+            "data_type": match.get("data_type", match.get("type", "XdString")),
+        }
+        if match.get("description"):
+            ref["description"] = match["description"]
+        if match.get("units"):
+            ref["units"] = match["units"]
+        return ref
+
     async def propose_cluster_hierarchy(
-        self, datasource_name: str, component_matches: list[dict]
+        self,
+        datasource_name: str,
+        component_matches: list[dict],
+        unmatched_columns: Optional[list[dict]] = None,
     ) -> dict:
         """Propose a Cluster hierarchy from datasource structure and matches.
 
         Args:
             datasource_name: Name of the datasource.
             component_matches: List of component match dicts from discover_components.
+            unmatched_columns: Optional list of unmatched column dicts with
+                ``name`` and ``data_type`` keys. These become mint-mode
+                component refs (billable). If None, unmatched columns are omitted.
 
         Returns:
-            Dict with hierarchy tree and cluster_count.
+            Dict with hierarchy tree, cluster_count, new_component_count, and
+            reuse_component_count.
         """
         start_time = time.monotonic()
 
-        # Determine structure — flat columns vs nested
-        nested_groups = {}
-        flat_components = []
+        # Merge matches and unmatched into a single list with component refs
+        all_items = list(component_matches)
+        if unmatched_columns:
+            for col in unmatched_columns:
+                all_items.append(
+                    {
+                        "column": col.get("name", col.get("column", "")),
+                        "data_type": col.get("data_type", "XdString"),
+                        "description": col.get("description", ""),
+                        "units": col.get("units", ""),
+                        # No ct_id → mint mode
+                    }
+                )
 
-        for match in component_matches:
-            col_name = match.get("column", "")
+        # Determine structure — flat columns vs nested
+        nested_groups: dict[str, list[dict]] = {}
+        flat_components: list[dict] = []
+
+        for item in all_items:
+            col_name = item.get("column", "")
             # Check if column name suggests grouping (e.g., "address.street")
             if "." in col_name:
                 group, _ = col_name.rsplit(".", 1)
-                nested_groups.setdefault(group, []).append(match)
+                nested_groups.setdefault(group, []).append(item)
             else:
-                flat_components.append(match)
+                flat_components.append(item)
 
         # Build hierarchy
         clusters = []
-        for group_name, group_matches in nested_groups.items():
+        for group_name, group_items in nested_groups.items():
             clusters.append(
                 {
                     "label": group_name.replace(".", "-"),
-                    "components": [{"ct_id": m["ct_id"]} for m in group_matches],
+                    "components": [self._match_to_component_ref(m) for m in group_items],
                     "clusters": [],
                 }
             )
 
         hierarchy = {
             "label": datasource_name.replace("_", "-"),
-            "components": [{"ct_id": m["ct_id"]} for m in flat_components],
+            "components": [self._match_to_component_ref(m) for m in flat_components],
             "clusters": clusters,
         }
 
         cluster_count = 1 + len(clusters)  # Root + nested
+        new_count = sum(1 for item in all_items if not item.get("ct_id"))
+        reuse_count = len(all_items) - new_count
 
         result = {
             "hierarchy": hierarchy,
             "cluster_count": cluster_count,
+            "new_component_count": new_count,
+            "reuse_component_count": reuse_count,
         }
 
         self._audit.log(
             agent="assembly",
             tool="propose_cluster_hierarchy",
-            inputs={"datasource_name": datasource_name, "match_count": len(component_matches)},
-            outputs={"cluster_count": cluster_count},
+            inputs={
+                "datasource_name": datasource_name,
+                "match_count": len(component_matches),
+                "unmatched_count": len(unmatched_columns or []),
+            },
+            outputs={
+                "cluster_count": cluster_count,
+                "new_count": new_count,
+                "reuse_count": reuse_count,
+            },
             start_time=start_time,
         )
         return result
@@ -280,19 +383,39 @@ class AssemblyToolset(BaseToolset):
         )
         return result
 
-    async def assemble_model(self, title: str, description: str, assembly_tree: dict) -> dict:
+    async def assemble_model(
+        self,
+        title: str,
+        description: str,
+        assembly_tree: dict,
+        contextual: Optional[dict] = None,
+    ) -> dict:
         """Assemble a data model by calling the SDCStudio Assembly API.
+
+        Supports two response modes:
+        - **Pure reuse** (HTTP 200): all components have ct_id. Returns
+          dm_ct_id, title, status, artifact_urls immediately.
+        - **Mixed** (HTTP 202): some components need minting. Returns
+          task_id and data_source_ct_id for async polling.
 
         Args:
             title: Title for the new data model.
             description: Description of the data model.
             assembly_tree: Complete assembly tree with hierarchy and components.
+                Components may be reuse refs (``{"ct_id": "..."}``}) or mint
+                refs (``{"label": "...", "data_type": "..."}``).
+            contextual: Optional contextual component references (audit,
+                attestation, party, etc.). Each value is a component ref dict.
 
         Returns:
-            Dict with dm_ct_id, title, status, and artifact_urls.
+            Dict with assembly result. Shape depends on response mode:
+            - Sync (200): ``{dm_ct_id, title, status, artifact_urls, mode: "sync"}``
+            - Async (202): ``{task_id, data_source_ct_id, estimated_cost,
+              new_components, status: "processing", mode: "async"}``
 
         Raises:
             ValueError: If assembly_tree is missing required structure.
+            InsufficientFundsError: If wallet balance is insufficient (HTTP 402).
             httpx.HTTPStatusError: If the Assembly API returns an error.
         """
         start_time = time.monotonic()
@@ -306,30 +429,45 @@ class AssemblyToolset(BaseToolset):
             raise ValueError("assembly_tree must have 'components' and/or 'clusters'")
 
         url = f"{self._base_url}/api/v1/dmgen/assemble/"
-        payload = {
+        payload: dict = {
             "title": title,
             "description": description,
-            "assembly_tree": assembly_tree,
+            "data": assembly_tree,
         }
-        headers = {}
-        if self._config.sdcstudio.api_key:
-            headers["Authorization"] = f"Bearer {self._config.sdcstudio.api_key}"
+        if contextual:
+            payload["contextual"] = contextual
 
-        resp = await self._http.post(url, json=payload, headers=headers)
+        resp = await self._http.post(url, json=payload)
+        self._check_402(resp)
         resp.raise_for_status()
         data = resp.json()
 
-        result = {
-            "dm_ct_id": data.get("dm_ct_id", ""),
-            "title": data.get("title", title),
-            "status": data.get("status", "published"),
-            "artifact_urls": data.get("artifact_urls", {}),
-        }
+        if resp.status_code == 202:
+            # Async path — components are being minted via agentic pipeline
+            result = {
+                "mode": "async",
+                "status": data.get("status", "processing"),
+                "task_id": data.get("task_id", ""),
+                "data_source_ct_id": data.get("data_source_ct_id", ""),
+                "estimated_cost": data.get("estimated_cost", ""),
+                "new_components": data.get("new_components", 0),
+                **self._extract_wallet_headers(resp),
+            }
+        else:
+            # Sync path — pure reuse, DM already published
+            result = {
+                "mode": "sync",
+                "dm_ct_id": data.get("dm_ct_id", data.get("ct_id", "")),
+                "title": data.get("title", title),
+                "status": data.get("status", "published"),
+                "artifact_urls": data.get("artifact_urls", {}),
+                **self._extract_wallet_headers(resp),
+            }
 
         self._audit.log(
             agent="assembly",
             tool="assemble_model",
-            inputs={"title": title},
+            inputs={"title": title, "mode": result.get("mode")},
             outputs=result,
             start_time=start_time,
         )

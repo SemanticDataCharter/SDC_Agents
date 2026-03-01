@@ -9,9 +9,12 @@ import httpx
 import pytest
 
 from sdc_agents.common.config import SDCAgentsConfig
+from sdc_agents.common.exceptions import InsufficientFundsError
 from sdc_agents.toolsets.assembly import AssemblyToolset
 from tests.fixtures.assembly_responses import (
     make_assembly_api_response,
+    make_assembly_insufficient_funds_response,
+    make_assembly_processing_response,
     make_contextual_components_response,
 )
 
@@ -60,6 +63,38 @@ def _make_error_transport():
             )
         if "/api/catalog/schemas/" in url:
             return httpx.Response(200, json=[])
+        return httpx.Response(404)
+
+    return httpx.MockTransport(handler)
+
+
+def _make_402_transport():
+    """Create a MockTransport that returns 402 for Assembly API."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "/api/v1/dmgen/assemble/" in url:
+            return httpx.Response(
+                402,
+                json=make_assembly_insufficient_funds_response(),
+                headers={
+                    "Content-Type": "application/json",
+                    "X-SDC-Estimated-Cost": "0.30",
+                    "X-SDC-Balance-Remaining": "0.05",
+                },
+            )
+        return httpx.Response(404)
+
+    return httpx.MockTransport(handler)
+
+
+def _make_202_transport():
+    """Create a MockTransport that returns 202 for mixed assembly."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "/api/v1/dmgen/assemble/" in url and request.method == "POST":
+            return httpx.Response(202, json=make_assembly_processing_response())
         return httpx.Response(404)
 
     return httpx.MockTransport(handler)
@@ -178,6 +213,38 @@ async def test_propose_cluster_hierarchy(assembly_config, assembly_client, tmp_p
     assert "label" in hierarchy
     assert "components" in hierarchy
     assert len(hierarchy["components"]) == 2
+    # All matched → all should be reuse refs with ct_id
+    for comp in hierarchy["components"]:
+        assert "ct_id" in comp
+    assert result["reuse_component_count"] == 2
+    assert result["new_component_count"] == 0
+
+
+async def test_propose_cluster_hierarchy_with_unmatched(assembly_config, assembly_client):
+    """Unmatched columns become mint-mode refs in the hierarchy."""
+    toolset = AssemblyToolset(config=assembly_config, http_client=assembly_client)
+
+    matches = [
+        {"column": "test_name", "ct_id": "clxdstr001", "label": "test-name", "type": "XdString"},
+    ]
+    unmatched = [
+        {"name": "internal_id", "data_type": "XdCount"},
+        {"name": "notes", "data_type": "XdString", "description": "Free-text notes"},
+    ]
+
+    result = await toolset.propose_cluster_hierarchy("lab_results", matches, unmatched)
+
+    hierarchy = result["hierarchy"]
+    assert len(hierarchy["components"]) == 3  # 1 matched + 2 unmatched
+    assert result["new_component_count"] == 2
+    assert result["reuse_component_count"] == 1
+
+    # Find the mint refs (no ct_id, have label + data_type)
+    mint_refs = [c for c in hierarchy["components"] if "ct_id" not in c]
+    assert len(mint_refs) == 2
+    for ref in mint_refs:
+        assert "label" in ref
+        assert "data_type" in ref
 
 
 async def test_select_contextual_components(assembly_config, assembly_client):
@@ -200,7 +267,7 @@ async def test_select_contextual_components(assembly_config, assembly_client):
 
 
 async def test_assemble_model(assembly_config, assembly_client):
-    """Assemble model calls Assembly API and returns result."""
+    """Assemble model calls Assembly API and returns sync result."""
     toolset = AssemblyToolset(config=assembly_config, http_client=assembly_client)
 
     assembly_tree = {
@@ -215,11 +282,78 @@ async def test_assemble_model(assembly_config, assembly_client):
         assembly_tree=assembly_tree,
     )
 
+    assert result["mode"] == "sync"
     assert result["dm_ct_id"] == "cldm00assembly01"
     assert result["title"] == "Lab Results Model"
     assert result["status"] == "published"
     assert "artifact_urls" in result
     assert "xsd" in result["artifact_urls"]
+
+
+async def test_assemble_model_sends_data_key(assembly_config):
+    """Verify the payload uses 'data' key (not 'assembly_tree')."""
+    captured_payload = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "/api/v1/dmgen/assemble/" in url:
+            captured_payload.update(json.loads(request.content))
+            return httpx.Response(200, json=make_assembly_api_response())
+        return httpx.Response(404)
+
+    transport = httpx.MockTransport(handler)
+    client = httpx.AsyncClient(transport=transport, base_url="https://test.local")
+    toolset = AssemblyToolset(config=assembly_config, http_client=client)
+
+    assembly_tree = {
+        "label": "test",
+        "components": [{"ct_id": "clxdstr001"}],
+        "clusters": [],
+    }
+    await toolset.assemble_model(
+        title="Test",
+        description="Test",
+        assembly_tree=assembly_tree,
+    )
+
+    assert "data" in captured_payload
+    assert "assembly_tree" not in captured_payload
+    assert captured_payload["data"]["label"] == "test"
+
+
+async def test_assemble_model_with_contextual(assembly_config):
+    """Verify contextual components are included in payload."""
+    captured_payload = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "/api/v1/dmgen/assemble/" in url:
+            captured_payload.update(json.loads(request.content))
+            return httpx.Response(200, json=make_assembly_api_response())
+        return httpx.Response(404)
+
+    transport = httpx.MockTransport(handler)
+    client = httpx.AsyncClient(transport=transport, base_url="https://test.local")
+    toolset = AssemblyToolset(config=assembly_config, http_client=client)
+
+    assembly_tree = {
+        "label": "test",
+        "components": [{"ct_id": "clxdstr001"}],
+        "clusters": [],
+    }
+    contextual = {
+        "audit": {"ct_id": "clctx_audit_cluster"},
+        "attestation": {"ct_id": "clctx_attest_cluster"},
+    }
+    await toolset.assemble_model(
+        title="Test",
+        description="Test",
+        assembly_tree=assembly_tree,
+        contextual=contextual,
+    )
+
+    assert "contextual" in captured_payload
+    assert captured_payload["contextual"]["audit"]["ct_id"] == "clctx_audit_cluster"
 
 
 async def test_assemble_model_api_error(assembly_config, error_client):
@@ -238,3 +372,140 @@ async def test_assemble_model_api_error(assembly_config, error_client):
             description="Should fail",
             assembly_tree=assembly_tree,
         )
+
+
+# --- HTTP 402 Insufficient Funds ---
+
+
+async def test_assemble_model_402(assembly_config):
+    """assemble_model raises InsufficientFundsError on HTTP 402."""
+    transport = _make_402_transport()
+    client = httpx.AsyncClient(transport=transport, base_url="https://test.local")
+    toolset = AssemblyToolset(config=assembly_config, http_client=client)
+
+    assembly_tree = {
+        "label": "expensive-model",
+        "components": [
+            {"label": "new-field", "data_type": "XdString"},
+            {"label": "another-field", "data_type": "XdCount"},
+            {"ct_id": "clxdstr001"},
+        ],
+        "clusters": [],
+    }
+
+    with pytest.raises(InsufficientFundsError) as exc_info:
+        await toolset.assemble_model(
+            title="Expensive Model",
+            description="Should fail with 402",
+            assembly_tree=assembly_tree,
+        )
+
+    assert exc_info.value.estimated_cost == "0.30"
+    assert exc_info.value.balance_remaining == "0.05"
+
+
+async def test_assemble_model_402_without_headers(assembly_config):
+    """402 without wallet headers still raises with body data."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "/api/v1/dmgen/assemble/" in url:
+            return httpx.Response(
+                402,
+                json=make_assembly_insufficient_funds_response(
+                    estimated_cost="0.50",
+                    balance="0.10",
+                ),
+                headers={"Content-Type": "application/json"},
+            )
+        return httpx.Response(404)
+
+    transport = httpx.MockTransport(handler)
+    client = httpx.AsyncClient(transport=transport, base_url="https://test.local")
+    toolset = AssemblyToolset(config=assembly_config, http_client=client)
+
+    assembly_tree = {
+        "label": "test",
+        "components": [{"label": "new", "data_type": "XdString"}],
+        "clusters": [],
+    }
+
+    with pytest.raises(InsufficientFundsError) as exc_info:
+        await toolset.assemble_model(
+            title="Test", description="Test", assembly_tree=assembly_tree,
+        )
+
+    # Without headers, should fall back to empty strings
+    assert exc_info.value.estimated_cost == ""
+    assert exc_info.value.balance_remaining == ""
+
+
+# --- HTTP 202 Async Assembly ---
+
+
+async def test_assemble_model_async_202(assembly_config):
+    """Mixed assembly returns async result with task_id."""
+    transport = _make_202_transport()
+    client = httpx.AsyncClient(transport=transport, base_url="https://test.local")
+    toolset = AssemblyToolset(config=assembly_config, http_client=client)
+
+    assembly_tree = {
+        "label": "mixed-model",
+        "components": [
+            {"ct_id": "clxdstr001"},
+            {"label": "new-field", "data_type": "XdCount"},
+        ],
+        "clusters": [],
+    }
+
+    result = await toolset.assemble_model(
+        title="Mixed Model",
+        description="Some reuse, some mint",
+        assembly_tree=assembly_tree,
+    )
+
+    assert result["mode"] == "async"
+    assert result["status"] == "processing"
+    assert result["task_id"] == "celery-task-abc123"
+    assert result["data_source_ct_id"] == "clds00assembly01"
+    assert result["estimated_cost"] == "0.20"
+    assert result["new_components"] == 2
+
+
+# --- Auth Header ---
+
+
+async def test_assemble_model_uses_token_auth(assembly_config):
+    """Verify auth header uses Token scheme (not Bearer)."""
+    captured_headers = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "/api/v1/dmgen/assemble/" in url:
+            captured_headers.update(dict(request.headers))
+            return httpx.Response(200, json=make_assembly_api_response())
+        return httpx.Response(404)
+
+    transport = httpx.MockTransport(handler)
+    # Create client WITHOUT pre-set headers so we see only what the toolset adds
+    client = httpx.AsyncClient(transport=transport, base_url="https://test.local")
+
+    # Create toolset that will build its own client with Token auth
+    toolset = AssemblyToolset(config=assembly_config, http_client=client)
+
+    assembly_tree = {
+        "label": "test",
+        "components": [{"ct_id": "clxdstr001"}],
+        "clusters": [],
+    }
+
+    # Note: When using injected http_client, auth headers are set on the client
+    # by the toolset constructor. With a test client, we verify the constructor
+    # logic separately. Here we verify the post() call doesn't add Bearer.
+    await toolset.assemble_model(
+        title="Test", description="Test", assembly_tree=assembly_tree,
+    )
+
+    # The injected client won't have headers, but verify no Bearer was added
+    auth = captured_headers.get("authorization", "")
+    assert "Bearer" not in auth

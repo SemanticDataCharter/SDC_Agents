@@ -66,6 +66,33 @@ def make_contextual_components_response(project: str = "SDC4-Core") -> list[dict
     ]
 
 
+def make_assembly_processing_response(
+    task_id: str = "celery-task-abc123",
+    data_source_ct_id: str = "clds00assembly01",
+    new_components: int = 2,
+    estimated_cost: str = "0.20",
+) -> dict:
+    """Sample HTTP 202 response for mixed (reuse + mint) assembly."""
+    return {
+        "status": "processing",
+        "task_id": task_id,
+        "data_source_ct_id": data_source_ct_id,
+        "estimated_cost": estimated_cost,
+        "new_components": new_components,
+    }
+
+
+def make_assembly_insufficient_funds_response(
+    estimated_cost: str = "0.30",
+    balance: str = "0.05",
+) -> dict:
+    """HTTP 402 response body for insufficient wallet balance."""
+    return {
+        "error": f"Insufficient wallet balance. Need ${estimated_cost}, have ${balance}.",
+        "error_type": "insufficient_funds",
+    }
+
+
 def make_discover_components_result(
     datasource: str = "lab_results",
 ) -> dict:
