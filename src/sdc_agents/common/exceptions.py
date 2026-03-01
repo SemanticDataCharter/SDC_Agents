@@ -4,7 +4,7 @@ from __future__ import annotations
 
 
 class InsufficientFundsError(Exception):
-    """Raised when the VaaS API returns HTTP 402 (insufficient wallet balance)."""
+    """Raised when an SDCStudio API returns HTTP 402 (insufficient wallet balance)."""
 
     def __init__(
         self,
