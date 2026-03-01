@@ -432,7 +432,9 @@ async def test_assemble_model_402_without_headers(assembly_config):
 
     with pytest.raises(InsufficientFundsError) as exc_info:
         await toolset.assemble_model(
-            title="Test", description="Test", assembly_tree=assembly_tree,
+            title="Test",
+            description="Test",
+            assembly_tree=assembly_tree,
         )
 
     # Without headers, should fall back to empty strings
@@ -503,7 +505,9 @@ async def test_assemble_model_uses_token_auth(assembly_config):
     # by the toolset constructor. With a test client, we verify the constructor
     # logic separately. Here we verify the post() call doesn't add Bearer.
     await toolset.assemble_model(
-        title="Test", description="Test", assembly_tree=assembly_tree,
+        title="Test",
+        description="Test",
+        assembly_tree=assembly_tree,
     )
 
     # The injected client won't have headers, but verify no Bearer was added
