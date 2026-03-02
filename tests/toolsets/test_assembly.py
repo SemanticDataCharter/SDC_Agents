@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 import httpx
 import pytest
@@ -42,8 +43,14 @@ def _make_transport(assembly_config):
     def handler(request: httpx.Request) -> httpx.Response:
         url = str(request.url)
 
-        if "/api/catalog/schemas/" in url and request.method == "GET":
-            return httpx.Response(200, json=make_contextual_components_response())
+        if "/api/v1/catalog/components/" in url and request.method == "GET":
+            # Parse the type param from query string to return correct fixture
+            parsed = urlparse(url)
+            params = parse_qs(parsed.query)
+            comp_type = params.get("type", ["audit"])[0]
+            return httpx.Response(
+                200, json=make_contextual_components_response(component_type=comp_type)
+            )
         if "/api/v1/dmgen/assemble/" in url and request.method == "POST":
             return httpx.Response(200, json=make_assembly_api_response())
 
@@ -61,8 +68,8 @@ def _make_error_transport():
             return httpx.Response(
                 400, json={"error": "Invalid component reference: clxyz_invalid"}
             )
-        if "/api/catalog/schemas/" in url:
-            return httpx.Response(200, json=[])
+        if "/api/v1/catalog/components/" in url:
+            return httpx.Response(200, json={"count": 0, "results": []})
         return httpx.Response(404)
 
     return httpx.MockTransport(handler)
@@ -288,6 +295,7 @@ async def test_assemble_model(assembly_config, assembly_client):
     assert result["status"] == "published"
     assert "artifact_urls" in result
     assert "xsd" in result["artifact_urls"]
+    assert "/api/v1/catalog/dm/" in result["artifact_urls"]["xsd"]
 
 
 async def test_assemble_model_sends_data_key(assembly_config):
@@ -437,9 +445,9 @@ async def test_assemble_model_402_without_headers(assembly_config):
             assembly_tree=assembly_tree,
         )
 
-    # Without headers, should fall back to empty strings
-    assert exc_info.value.estimated_cost == ""
-    assert exc_info.value.balance_remaining == ""
+    # Without X-SDC-* headers, falls back to body fields
+    assert exc_info.value.estimated_cost == "0.50"
+    assert exc_info.value.balance_remaining == "0.10"
 
 
 # --- HTTP 202 Async Assembly ---

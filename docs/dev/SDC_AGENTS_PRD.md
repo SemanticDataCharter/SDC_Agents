@@ -1357,11 +1357,12 @@ async def select_contextual_components(
         {ct_id, label} or None), project.
 
     API Call:
-        GET /api/catalog/schemas/?project_name={default_library_project}
+        GET /api/v1/catalog/components/?project={default_library_project}&type={slot}
+        (one call per slot: audit, attestation, party)
 
     Logic:
-        Matches contextual slots by label patterns (e.g., 'audit',
-        'audit-trail', 'audit-log' for the audit slot).
+        Uses type-filtered catalog components endpoint to find published
+        components of each contextual type in the default project.
     """
 ```
 

@@ -78,10 +78,10 @@ class AssemblyToolset(BaseToolset):
             )
             bal = resp.headers.get(
                 "X-SDC-Balance-Remaining",
-                data.get("balance_remaining", ""),
+                data.get("balance", data.get("balance_remaining", "")),
             )
             raise InsufficientFundsError(
-                message=data.get("detail", data.get("error", "Insufficient wallet balance.")),
+                message=data.get("error", data.get("detail", "Insufficient wallet balance.")),
                 estimated_cost=est,
                 balance_remaining=bal,
             )
@@ -328,6 +328,10 @@ class AssemblyToolset(BaseToolset):
     ) -> dict:
         """Select contextual components (audit, attestation, party) from default project.
 
+        Uses the catalog components endpoint with type filtering to find
+        published Audit, Attestation, and Party components in the default
+        library project.
+
         Args:
             context_description: Optional description to guide component selection.
 
@@ -343,31 +347,23 @@ class AssemblyToolset(BaseToolset):
                 "Set sdcstudio.default_library_project in your config."
             )
 
-        # Fetch catalog components filtered to default project
-        url = f"{self._base_url}/api/catalog/schemas/"
-        params = {"project_name": project}
+        # Fetch each contextual type directly from the catalog components endpoint
+        contextual: dict[str, dict | None] = {"audit": None, "attestation": None, "party": None}
 
-        resp = await self._http.get(url, params=params)
-        resp.raise_for_status()
-        schemas = resp.json()
-
-        # Match contextual slots by label patterns
-        contextual = {"audit": None, "attestation": None, "party": None}
-        slot_patterns = {
-            "audit": ["audit", "audit-trail", "audit-log"],
-            "attestation": ["attestation", "attest", "signature"],
-            "party": ["party", "participant", "actor"],
-        }
-
-        for schema in schemas:
-            for comp in schema.get("components", []):
-                label = comp.get("label", "").lower()
-                for slot, patterns in slot_patterns.items():
-                    if contextual[slot] is None and any(p in label for p in patterns):
-                        contextual[slot] = {
-                            "ct_id": comp.get("ct_id", ""),
-                            "label": comp.get("label", ""),
-                        }
+        for slot in contextual:
+            resp = await self._http.get(
+                "/api/v1/catalog/components/",
+                params={"project": project, "type": slot},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            results = data.get("results", data) if isinstance(data, dict) else data
+            if results:
+                comp = results[0]
+                contextual[slot] = {
+                    "ct_id": comp.get("ct_id", ""),
+                    "label": comp.get("label", ""),
+                }
 
         result = {
             "contextual": contextual,
@@ -393,8 +389,8 @@ class AssemblyToolset(BaseToolset):
         """Assemble a data model by calling the SDCStudio Assembly API.
 
         Supports two response modes:
-        - **Pure reuse** (HTTP 200): all components have ct_id. Returns
-          dm_ct_id, title, status, artifact_urls immediately.
+        - **Pure reuse** (HTTP 200): all components have ct_id. Server returns
+          ``CatalogDMDetailSerializer`` (ct_id, title, artifacts, components).
         - **Mixed** (HTTP 202): some components need minting. Returns
           task_id and data_source_ct_id for async polling.
 
@@ -410,6 +406,7 @@ class AssemblyToolset(BaseToolset):
         Returns:
             Dict with assembly result. Shape depends on response mode:
             - Sync (200): ``{dm_ct_id, title, status, artifact_urls, mode: "sync"}``
+              (dm_ct_id and artifact_urls mapped from server's ct_id and artifacts)
             - Async (202): ``{task_id, data_source_ct_id, estimated_cost,
               new_components, status: "processing", mode: "async"}``
 
@@ -457,10 +454,10 @@ class AssemblyToolset(BaseToolset):
             # Sync path — pure reuse, DM already published
             result = {
                 "mode": "sync",
-                "dm_ct_id": data.get("dm_ct_id", data.get("ct_id", "")),
+                "dm_ct_id": data.get("ct_id", ""),
                 "title": data.get("title", title),
-                "status": data.get("status", "published"),
-                "artifact_urls": data.get("artifact_urls", {}),
+                "status": "published",
+                "artifact_urls": data.get("artifacts", {}),
                 **self._extract_wallet_headers(resp),
             }
 

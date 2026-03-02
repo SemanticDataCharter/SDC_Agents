@@ -4,66 +4,82 @@ from __future__ import annotations
 
 
 def make_assembly_api_response(
-    dm_ct_id: str = "cldm00assembly01",
+    ct_id: str = "cldm00assembly01",
     title: str = "Lab Results Model",
 ) -> dict:
-    """Sample POST /api/v1/dmgen/assemble/ response."""
+    """Sample POST /api/v1/dmgen/assemble/ 200 response (CatalogDMDetailSerializer)."""
     return {
-        "dm_ct_id": dm_ct_id,
+        "ct_id": ct_id,
+        "identifier": f"dm-{ct_id}",
         "title": title,
-        "status": "published",
-        "artifact_urls": {
-            "xsd": f"/api/catalog/schemas/{dm_ct_id}/artifacts/xsd/",
-            "rdf": f"/api/catalog/schemas/{dm_ct_id}/artifacts/rdf/",
-            "skeleton": f"/api/catalog/schemas/{dm_ct_id}/artifacts/skeleton/",
-            "html": f"/api/catalog/schemas/{dm_ct_id}/artifacts/html/",
+        "description": "A model for lab test results",
+        "project_name": "Healthcare Core",
+        "about": "",
+        "created": "2026-01-15T10:00:00Z",
+        "updated": "2026-01-15T10:00:00Z",
+        "artifacts": {
+            "xsd": f"/api/v1/catalog/dm/{ct_id}/xsd/",
+            "ttl": f"/api/v1/catalog/dm/{ct_id}/ttl/",
+            "skeleton": f"/api/v1/catalog/dm/{ct_id}/skeleton/",
+            "html": f"/api/v1/catalog/dm/{ct_id}/html/",
         },
+        "components": [
+            {
+                "type": "XdString",
+                "ct_id": "clxdstr001",
+                "label": "test-name",
+            },
+            {
+                "type": "XdQuantity",
+                "ct_id": "clxdqty001",
+                "label": "result-value",
+            },
+        ],
     }
 
 
-def make_contextual_components_response(project: str = "SDC4-Core") -> list[dict]:
-    """Sample catalog response for default project with contextual components."""
-    return [
-        {
-            "ct_id": "clctx_audit01",
-            "title": "Audit Components",
-            "project_name": project,
-            "components": [
-                {
-                    "type": "Cluster",
-                    "ct_id": "clctx_audit_cluster",
-                    "label": "audit-trail",
-                    "children": [],
-                },
-            ],
+def make_contextual_components_response(
+    component_type: str = "audit", project: str = "SDC4-Core"
+) -> dict:
+    """Sample /api/v1/catalog/components/?type={type}&project={project} response.
+
+    Returns paginated catalog component results for one contextual type.
+    """
+    type_data = {
+        "audit": {
+            "ct_id": "clctx_audit_cluster",
+            "label": "audit-trail",
+            "component_type": "Audit",
         },
-        {
-            "ct_id": "clctx_attest01",
-            "title": "Attestation Components",
-            "project_name": project,
-            "components": [
-                {
-                    "type": "Cluster",
-                    "ct_id": "clctx_attest_cluster",
-                    "label": "attestation",
-                    "children": [],
-                },
-            ],
+        "attestation": {
+            "ct_id": "clctx_attest_cluster",
+            "label": "attestation",
+            "component_type": "Attestation",
         },
-        {
-            "ct_id": "clctx_party01",
-            "title": "Party Components",
-            "project_name": project,
-            "components": [
-                {
-                    "type": "Cluster",
-                    "ct_id": "clctx_party_cluster",
-                    "label": "party-identifier",
-                    "children": [],
-                },
-            ],
+        "party": {
+            "ct_id": "clctx_party_cluster",
+            "label": "party-identifier",
+            "component_type": "Party",
         },
-    ]
+    }
+    comp = type_data.get(component_type, type_data["audit"])
+    return {
+        "count": 1,
+        "page": 1,
+        "page_size": 50,
+        "results": [
+            {
+                "ct_id": comp["ct_id"],
+                "label": comp["label"],
+                "description": f"Default {comp['component_type']} component",
+                "component_type": comp["component_type"],
+                "project_name": project,
+                "reuse_ref": f"@{project}:{comp['label']}",
+                "units": "",
+                "pred_obj": [],
+            },
+        ],
+    }
 
 
 def make_assembly_processing_response(
@@ -90,6 +106,8 @@ def make_assembly_insufficient_funds_response(
     return {
         "error": f"Insufficient wallet balance. Need ${estimated_cost}, have ${balance}.",
         "error_type": "insufficient_funds",
+        "estimated_cost": estimated_cost,
+        "balance": balance,
     }
 
 

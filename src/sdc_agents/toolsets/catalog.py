@@ -81,7 +81,7 @@ class CatalogToolset(BaseToolset):
         """
         start = time.monotonic()
         params = {"search": query} if query else {}
-        resp = await self._http.get("/api/catalog/schemas/", params=params)
+        resp = await self._http.get("/api/v1/catalog/dms/", params=params)
         resp.raise_for_status()
         result = resp.json()
         self._audit.log(
@@ -108,7 +108,7 @@ class CatalogToolset(BaseToolset):
         if self._cache.is_cached(cache_path):
             result = json.loads(cache_path.read_text())
         else:
-            resp = await self._http.get(f"/api/catalog/schemas/{ct_id}/")
+            resp = await self._http.get(f"/api/v1/catalog/dm/{ct_id}/")
             resp.raise_for_status()
             result = resp.json()
             cache_path.write_text(json.dumps(result, indent=2))
@@ -132,7 +132,7 @@ class CatalogToolset(BaseToolset):
             RDF/XML content as a string.
         """
         start = time.monotonic()
-        resp = await self._http.get(f"/api/catalog/schemas/{ct_id}/artifacts/rdf/")
+        resp = await self._http.get(f"/api/v1/catalog/dm/{ct_id}/ttl/")
         resp.raise_for_status()
         result = resp.text
         self._audit.log(
@@ -154,7 +154,7 @@ class CatalogToolset(BaseToolset):
             XML skeleton content as a string.
         """
         start = time.monotonic()
-        resp = await self._http.get(f"/api/catalog/schemas/{ct_id}/artifacts/skeleton/")
+        resp = await self._http.get(f"/api/v1/catalog/dm/{ct_id}/skeleton/")
         resp.raise_for_status()
         result = resp.text
         self._audit.log(
@@ -166,23 +166,22 @@ class CatalogToolset(BaseToolset):
         )
         return result
 
-    async def catalog_download_ontologies(self, ct_id: str) -> str:
-        """Download ontology definitions associated with a schema.
+    async def catalog_download_ontologies(self) -> str:
+        """Download SDC4 ontology definitions.
 
-        Args:
-            ct_id: The CUID2 identifier of the schema.
+        Ontologies are global (not per-schema) in the SDCStudio catalog.
 
         Returns:
             RDF/XML ontology content as a string.
         """
         start = time.monotonic()
-        resp = await self._http.get(f"/api/catalog/schemas/{ct_id}/artifacts/ontologies/")
+        resp = await self._http.get("/api/v1/catalog/ontologies/sdc4/")
         resp.raise_for_status()
         result = resp.text
         self._audit.log(
             agent="catalog",
             tool="catalog_download_ontologies",
-            inputs={"ct_id": ct_id},
+            inputs={},
             outputs=result,
             start_time=start,
         )

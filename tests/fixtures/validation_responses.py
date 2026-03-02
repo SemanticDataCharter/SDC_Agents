@@ -73,9 +73,9 @@ def make_sign_response() -> dict:
 def make_insufficient_funds_response() -> dict:
     """HTTP 402 response body for insufficient wallet balance."""
     return {
-        "detail": "Insufficient wallet balance.",
+        "error": "Insufficient wallet balance",
         "estimated_cost": "0.001",
-        "balance_remaining": "0.0000",
+        "balance": "0.0000",
     }
 
 

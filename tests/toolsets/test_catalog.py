@@ -48,14 +48,14 @@ def catalog_config(tmp_path: Path) -> SDCAgentsConfig:
 def catalog_toolset(catalog_config: SDCAgentsConfig) -> CatalogToolset:
     transport = _make_transport(
         {
-            "/api/catalog/schemas/": (200, make_schema_list_response()),
-            "/api/catalog/schemas/clxyz123abc/": (200, make_schema_detail_response()),
-            "/api/catalog/schemas/clxyz123abc/artifacts/rdf/": (200, make_rdf_response()),
-            "/api/catalog/schemas/clxyz123abc/artifacts/skeleton/": (
+            "/api/v1/catalog/dms/": (200, make_schema_list_response()),
+            "/api/v1/catalog/dm/clxyz123abc/": (200, make_schema_detail_response()),
+            "/api/v1/catalog/dm/clxyz123abc/ttl/": (200, make_rdf_response()),
+            "/api/v1/catalog/dm/clxyz123abc/skeleton/": (
                 200,
                 make_skeleton_response(),
             ),
-            "/api/catalog/schemas/clxyz123abc/artifacts/ontologies/": (
+            "/api/v1/catalog/ontologies/sdc4/": (
                 200,
                 make_ontologies_response(),
             ),
@@ -111,7 +111,7 @@ async def test_download_skeleton(catalog_toolset: CatalogToolset):
 
 async def test_download_ontologies(catalog_toolset: CatalogToolset):
     """download_ontologies returns ontology RDF."""
-    result = await catalog_toolset.catalog_download_ontologies("clxyz123abc")
+    result = await catalog_toolset.catalog_download_ontologies()
     assert "owl:Ontology" in result
 
 
