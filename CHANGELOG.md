@@ -14,7 +14,7 @@ aligned with SDC Generation 4.
 
 ---
 
-## [Unreleased]
+## [4.0.0] - 2026-03-02
 
 ### Added
 - **Semantic Discovery Agent**: `SemanticDiscoveryToolset` with 1 tool (`vertex_ai_search`), ADK-native only — wraps ADK's `VertexAiSearchTool` for semantic component discovery from Vertex AI Search data stores. Cannot be served via MCP (`ToolContext` requirement).
@@ -24,7 +24,18 @@ aligned with SDC Generation 4.
 - `pdf` and `docx` added to `KnowledgeSourceConfig.type` literal
 - Optional `pymupdf>=1.24` and `python-docx>=1.1` in `[knowledge]` extra
 - Optional `google-cloud-aiplatform>=1.52` in `[vertex-ai-search]` extra
+- `InsufficientFundsError` exception with `estimated_cost` and `balance_remaining` fields
+- HTTP 402 detection and resumable hard stop for batch validation
+- Assembly toolset wallet billing: 402 handling, wallet header extraction, mixed assembly (HTTP 202) support
 - 9 agents, 32 total tools (up from 8 agents, 31 tools)
+- 195 tests passing across Python 3.11/3.12/3.13
+
+### Fixed
+- Catalog API URLs aligned with SDCStudio (`/api/v1/catalog/dms/`, `/api/v1/catalog/dm/{ct_id}/`, etc.)
+- `select_contextual_components` rewritten to use `/api/v1/catalog/components/` with type filtering
+- Assembly 200 response mapping (`ct_id` + `artifacts` from `CatalogDMDetailSerializer`)
+- VaaS/Assembly 402 body field parsing (`error` + `balance` priority over `detail` + `balance_remaining`)
+- `catalog_download_ontologies` no longer requires `ct_id` (ontologies are global in SDCStudio)
 
 ### Previously added (unreleased)
 - **Knowledge Agent**: `KnowledgeToolset` with 3 tools (`ingest_knowledge_source`, `query_knowledge`, `list_indexed_sources`) — ingests customer contextual resources (CSV, JSON, TTL, Markdown, plain text) into a local Chroma vector store for semantic context matching. Lazy `chromadb` import, `asyncio.to_thread()` for synchronous Chroma calls.
