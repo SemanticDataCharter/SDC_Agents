@@ -66,11 +66,9 @@ Download an XML skeleton instance for a schema. The skeleton contains placeholde
 
 ### `catalog_download_ontologies`
 
-Download ontology definitions associated with a schema.
+Download SDC4 ontology definitions. Ontologies are global (not per-schema) in the SDCStudio catalog.
 
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `ct_id` | str | Yes | — | CUID2 identifier of the schema |
+**Parameters:** None.
 
 **Returns:** `str` — RDF/XML ontology content.
 
@@ -705,8 +703,8 @@ Assemble a data model by calling the SDCStudio Assembly API. Fail-closed: the en
   "title": "Lab Results Model",
   "status": "published",
   "artifact_urls": {
-    "xsd": "/api/catalog/schemas/cldm00assembly01/artifacts/xsd/",
-    "rdf": "/api/catalog/schemas/cldm00assembly01/artifacts/rdf/"
+    "xsd": "/api/v1/catalog/dm/cldm00assembly01/xsd/",
+    "ttl": "/api/v1/catalog/dm/cldm00assembly01/ttl/"
   }
 }
 ```

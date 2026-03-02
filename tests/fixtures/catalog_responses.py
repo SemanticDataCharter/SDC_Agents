@@ -2,30 +2,42 @@
 
 
 def make_schema_list_response() -> list[dict]:
-    """List of schema summaries as returned by /api/catalog/schemas/."""
+    """List of DM summaries as returned by /api/v1/catalog/dms/."""
     return [
         {
             "ct_id": "clxyz123abc",
+            "identifier": "dm-clxyz123abc",
             "title": "Lab Results",
             "description": "Standard laboratory test results model",
             "project_name": "Healthcare Core",
+            "about": "",
+            "created": "2026-01-15T10:00:00Z",
+            "updated": "2026-01-15T10:00:00Z",
         },
         {
             "ct_id": "clxyz456def",
+            "identifier": "dm-clxyz456def",
             "title": "Patient Demographics",
             "description": "Patient demographic information model",
             "project_name": "Healthcare Core",
+            "about": "",
+            "created": "2026-01-16T10:00:00Z",
+            "updated": "2026-01-16T10:00:00Z",
         },
     ]
 
 
 def make_schema_detail_response(ct_id: str = "clxyz123abc") -> dict:
-    """Full schema detail as returned by /api/catalog/schemas/{ct_id}/."""
+    """Full DM detail as returned by /api/v1/catalog/dm/{ct_id}/."""
     return {
         "ct_id": ct_id,
+        "identifier": f"dm-{ct_id}",
         "title": "Lab Results",
         "description": "Standard laboratory test results model",
         "project_name": "Healthcare Core",
+        "about": "",
+        "created": "2026-01-15T10:00:00Z",
+        "updated": "2026-01-15T10:00:00Z",
         "components": [
             {
                 "type": "Cluster",
@@ -56,10 +68,10 @@ def make_schema_detail_response(ct_id: str = "clxyz123abc") -> dict:
             },
         ],
         "artifacts": {
-            "xsd": f"/api/catalog/schemas/{ct_id}/artifacts/xsd/",
-            "rdf": f"/api/catalog/schemas/{ct_id}/artifacts/rdf/",
-            "skeleton": f"/api/catalog/schemas/{ct_id}/artifacts/skeleton/",
-            "ontologies": f"/api/catalog/schemas/{ct_id}/artifacts/ontologies/",
+            "xsd": f"/api/v1/catalog/dm/{ct_id}/xsd/",
+            "ttl": f"/api/v1/catalog/dm/{ct_id}/ttl/",
+            "skeleton": f"/api/v1/catalog/dm/{ct_id}/skeleton/",
+            "html": f"/api/v1/catalog/dm/{ct_id}/html/",
         },
     }
 

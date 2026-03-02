@@ -101,10 +101,10 @@ class ValidationToolset(BaseToolset):
             )
             bal = resp.headers.get(
                 "X-SDC-Balance-Remaining",
-                data.get("balance_remaining", ""),
+                data.get("balance", data.get("balance_remaining", "")),
             )
             raise InsufficientFundsError(
-                message=data.get("detail", "Insufficient wallet balance."),
+                message=data.get("error", data.get("detail", "Insufficient wallet balance.")),
                 estimated_cost=est,
                 balance_remaining=bal,
             )
