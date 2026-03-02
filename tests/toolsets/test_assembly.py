@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 import httpx
 import pytest
@@ -44,7 +45,6 @@ def _make_transport(assembly_config):
 
         if "/api/v1/catalog/components/" in url and request.method == "GET":
             # Parse the type param from query string to return correct fixture
-            from urllib.parse import urlparse, parse_qs
             parsed = urlparse(url)
             params = parse_qs(parsed.query)
             comp_type = params.get("type", ["audit"])[0]
