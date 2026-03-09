@@ -14,6 +14,25 @@ aligned with SDC Generation 4.
 
 ---
 
+## [4.1.0] - 2026-03-09
+
+### Added
+- `catalog_check_wallet` tool in CatalogToolset — check wallet balance and auto-reload settings before expensive operations (requires API key)
+- `XdToken` support in `TYPE_COMPATIBILITY` mapping matrix — `"token"` source type maps to `XdToken`, `"string"` now also matches `XdToken` as fallback
+- ADK integration documentation (`docs/integrations/ADK_INTEGRATION.md`) and minimal example for Google ADK tools catalog submission
+
+### Changed
+- `select_contextual_components` expanded from 3 slots (audit, attestation, party) to all 9 contextual types supported by SDCStudio Assembly API (adds subject, provider, participation, protocol, workflow, acs)
+- Catalog agent instruction updated to mention wallet checking capability
+- CatalogToolset now exposes 6 tools (was 5)
+
+### Tests
+- 201 tests passing (was 199), 2 skipped
+- New tests: XdToken type compatibility, 9-slot contextual components, wallet check with/without API key
+- Security isolation tests updated for new tool count
+
+---
+
 ## [4.0.0] - 2026-03-02
 
 ### Added
