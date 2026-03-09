@@ -107,3 +107,19 @@ def make_ontologies_response() -> str:
     <owl:versionInfo>4.0.0</owl:versionInfo>
   </owl:Ontology>
 </rdf:RDF>"""
+
+
+def make_wallet_response(
+    balance: str = "25.00",
+    auto_reload_enabled: bool = True,
+    auto_reload_threshold: str = "5.00",
+    auto_reload_amount: str = "25.00",
+) -> dict:
+    """Sample GET /api/v1/wallet/ response."""
+    return {
+        "balance": balance,
+        "auto_reload_enabled": auto_reload_enabled,
+        "auto_reload_threshold": auto_reload_threshold,
+        "auto_reload_amount": auto_reload_amount,
+        "updated_at": "2026-03-09T12:00:00Z",
+    }

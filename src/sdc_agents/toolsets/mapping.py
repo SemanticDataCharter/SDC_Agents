@@ -19,7 +19,8 @@ from sdc_agents.common.config import SDCAgentsConfig
 
 # Type compatibility matrix: source_type -> set of compatible SDC4 component types
 TYPE_COMPATIBILITY: dict[str, set[str]] = {
-    "string": {"XdString"},
+    "string": {"XdString", "XdToken"},
+    "token": {"XdToken"},
     "integer": {"XdCount", "XdQuantity", "XdIntegerList"},
     "decimal": {"XdQuantity", "XdDecimalList"},
     "boolean": {"XdBoolean", "XdBooleanList"},
