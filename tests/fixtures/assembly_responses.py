@@ -61,6 +61,36 @@ def make_contextual_components_response(
             "label": "party-identifier",
             "component_type": "Party",
         },
+        "subject": {
+            "ct_id": "clctx_subject_cluster",
+            "label": "subject",
+            "component_type": "Subject",
+        },
+        "provider": {
+            "ct_id": "clctx_provider_cluster",
+            "label": "provider",
+            "component_type": "Provider",
+        },
+        "participation": {
+            "ct_id": "clctx_participation_cluster",
+            "label": "participation",
+            "component_type": "Participation",
+        },
+        "protocol": {
+            "ct_id": "clctx_protocol_cluster",
+            "label": "protocol",
+            "component_type": "Protocol",
+        },
+        "workflow": {
+            "ct_id": "clctx_workflow_cluster",
+            "label": "workflow",
+            "component_type": "Workflow",
+        },
+        "acs": {
+            "ct_id": "clctx_acs_cluster",
+            "label": "acs",
+            "component_type": "Acs",
+        },
     }
     comp = type_data.get(component_type, type_data["audit"])
     return {

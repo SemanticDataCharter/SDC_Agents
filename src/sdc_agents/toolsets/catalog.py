@@ -62,6 +62,7 @@ class CatalogToolset(BaseToolset):
             FunctionTool(self.catalog_download_schema_rdf),
             FunctionTool(self.catalog_download_skeleton),
             FunctionTool(self.catalog_download_ontologies),
+            FunctionTool(self.catalog_check_wallet),
         ]
         if readonly_context and self.tool_filter:
             return [t for t in tools if self._is_tool_selected(t, readonly_context)]
@@ -181,6 +182,40 @@ class CatalogToolset(BaseToolset):
         self._audit.log(
             agent="catalog",
             tool="catalog_download_ontologies",
+            inputs={},
+            outputs=result,
+            start_time=start,
+        )
+        return result
+
+    async def catalog_check_wallet(self) -> dict:
+        """Check wallet balance and auto-reload settings.
+
+        Requires API key authentication. Returns current balance,
+        auto-reload configuration, and per-operation costs.
+
+        Returns:
+            Dict with balance, auto_reload_enabled, auto_reload_threshold,
+            auto_reload_amount, and updated_at.
+
+        Raises:
+            ValueError: If no API key is configured.
+        """
+        start = time.monotonic()
+
+        if not self._config.sdcstudio.api_key:
+            raise ValueError(
+                "API key required for wallet check. " "Set sdcstudio.api_key in your config."
+            )
+
+        headers = {"Authorization": f"Token {self._config.sdcstudio.api_key}"}
+        resp = await self._http.get("/api/v1/wallet/", headers=headers)
+        resp.raise_for_status()
+        result = resp.json()
+
+        self._audit.log(
+            agent="catalog",
+            tool="catalog_check_wallet",
             inputs={},
             outputs=result,
             start_time=start,

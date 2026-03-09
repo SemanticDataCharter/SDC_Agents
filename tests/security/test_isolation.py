@@ -48,7 +48,7 @@ def security_config(tmp_path: Path) -> SDCAgentsConfig:
 
 
 async def test_catalog_only_exposes_catalog_tools(security_config):
-    """Catalog toolset has exactly 5 catalog-scoped tools."""
+    """Catalog toolset has exactly 6 catalog-scoped tools."""
     transport = httpx.MockTransport(lambda r: httpx.Response(200, json=[]))
     client = httpx.AsyncClient(transport=transport, base_url="https://test.local")
     toolset = CatalogToolset(config=security_config, http_client=client)
@@ -60,6 +60,7 @@ async def test_catalog_only_exposes_catalog_tools(security_config):
         "catalog_download_schema_rdf",
         "catalog_download_skeleton",
         "catalog_download_ontologies",
+        "catalog_check_wallet",
     }
     # No introspect or mapping tools
     assert not names & {"introspect_sql", "introspect_csv", "mapping_suggest"}
@@ -318,7 +319,7 @@ async def test_no_tool_name_overlap():
 
     # Verify expected counts (5+5+3+3+3+5+3+4+1 = 32 total)
     assert len(all_toolsets["assembly"]) == 4
-    assert len(all_toolsets["catalog"]) == 5
+    assert len(all_toolsets["catalog"]) == 6
     assert len(all_toolsets["distribution"]) == 5
     assert len(all_toolsets["generator"]) == 3
     assert len(all_toolsets["introspect"]) == 5

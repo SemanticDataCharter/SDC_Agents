@@ -17,6 +17,7 @@ from tests.fixtures.catalog_responses import (
     make_schema_detail_response,
     make_schema_list_response,
     make_skeleton_response,
+    make_wallet_response,
 )
 
 
@@ -115,10 +116,10 @@ async def test_download_ontologies(catalog_toolset: CatalogToolset):
     assert "owl:Ontology" in result
 
 
-async def test_get_tools_returns_five(catalog_toolset: CatalogToolset):
-    """get_tools returns exactly 5 tools."""
+async def test_get_tools_returns_six(catalog_toolset: CatalogToolset):
+    """get_tools returns exactly 6 tools."""
     tools = await catalog_toolset.get_tools()
-    assert len(tools) == 5
+    assert len(tools) == 6
     names = {t.name for t in tools}
     assert names == {
         "catalog_list_schemas",
@@ -126,6 +127,7 @@ async def test_get_tools_returns_five(catalog_toolset: CatalogToolset):
         "catalog_download_schema_rdf",
         "catalog_download_skeleton",
         "catalog_download_ontologies",
+        "catalog_check_wallet",
     }
 
 
@@ -138,3 +140,48 @@ async def test_audit_log_written(catalog_toolset: CatalogToolset, catalog_config
     records = read_audit_records(audit)
     assert len(records) >= 1
     assert records[0]["tool"] == "catalog_list_schemas"
+
+
+async def test_catalog_check_wallet(tmp_path: Path):
+    """catalog_check_wallet returns balance data."""
+    wallet_data = make_wallet_response()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/api/v1/wallet/":
+            # Verify Token auth header is sent
+            assert "Token test-wallet-key" in request.headers.get("authorization", "")
+            return httpx.Response(200, json=wallet_data)
+        return httpx.Response(404)
+
+    transport = httpx.MockTransport(handler)
+    client = httpx.AsyncClient(transport=transport, base_url="https://test.local")
+    config = SDCAgentsConfig(
+        sdcstudio={"base_url": "https://test.local", "api_key": "test-wallet-key"},
+        cache={"root": str(tmp_path / ".sdc-cache")},
+        audit={"path": str(tmp_path / "audit.jsonl"), "log_level": "verbose"},
+    )
+    toolset = CatalogToolset(config=config, http_client=client)
+
+    result = await toolset.catalog_check_wallet()
+
+    assert result["balance"] == "25.00"
+    assert result["auto_reload_enabled"] is True
+    assert result["auto_reload_threshold"] == "5.00"
+    assert result["auto_reload_amount"] == "25.00"
+    assert "updated_at" in result
+
+
+async def test_catalog_check_wallet_no_api_key(tmp_path: Path):
+    """catalog_check_wallet raises ValueError without API key."""
+    config = SDCAgentsConfig(
+        sdcstudio={"base_url": "https://test.local"},
+        cache={"root": str(tmp_path / ".sdc-cache")},
+        audit={"path": str(tmp_path / "audit.jsonl")},
+    )
+    transport = httpx.MockTransport(lambda r: httpx.Response(404))
+    client = httpx.AsyncClient(transport=transport, base_url="https://test.local")
+    toolset = CatalogToolset(config=config, http_client=client)
+
+    with pytest.raises(ValueError, match="API key required"):
+        await toolset.catalog_check_wallet()

@@ -255,7 +255,7 @@ async def test_propose_cluster_hierarchy_with_unmatched(assembly_config, assembl
 
 
 async def test_select_contextual_components(assembly_config, assembly_client):
-    """Select contextual components from default project."""
+    """Select contextual components from default project — all 9 slots."""
     toolset = AssemblyToolset(config=assembly_config, http_client=assembly_client)
 
     result = await toolset.select_contextual_components()
@@ -263,14 +263,32 @@ async def test_select_contextual_components(assembly_config, assembly_client):
     assert result["project"] == "SDC4-Core"
     assert "contextual" in result
     ctx = result["contextual"]
-    assert "audit" in ctx
-    assert "attestation" in ctx
-    assert "party" in ctx
-    # With our mock data, all three should be found
+
+    # All 9 contextual slots must be present
+    expected_slots = {
+        "audit",
+        "attestation",
+        "party",
+        "subject",
+        "provider",
+        "participation",
+        "protocol",
+        "workflow",
+        "acs",
+    }
+    assert set(ctx.keys()) == expected_slots
+
+    # With our mock data, all 9 should be found
     assert ctx["audit"] is not None
     assert ctx["audit"]["label"] == "audit-trail"
     assert ctx["attestation"]["label"] == "attestation"
     assert ctx["party"]["label"] == "party-identifier"
+    assert ctx["subject"]["label"] == "subject"
+    assert ctx["provider"]["label"] == "provider"
+    assert ctx["participation"]["label"] == "participation"
+    assert ctx["protocol"]["label"] == "protocol"
+    assert ctx["workflow"]["label"] == "workflow"
+    assert ctx["acs"]["label"] == "acs"
 
 
 async def test_assemble_model(assembly_config, assembly_client):

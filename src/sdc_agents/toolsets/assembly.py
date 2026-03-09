@@ -326,11 +326,14 @@ class AssemblyToolset(BaseToolset):
     async def select_contextual_components(
         self, context_description: Optional[str] = None
     ) -> dict:
-        """Select contextual components (audit, attestation, party) from default project.
+        """Select contextual components from default project.
+
+        Queries the catalog for all 9 contextual slot types supported by the
+        SDCStudio Assembly API: audit, attestation, party, subject, provider,
+        participation, protocol, workflow, and acs.
 
         Uses the catalog components endpoint with type filtering to find
-        published Audit, Attestation, and Party components in the default
-        library project.
+        published components in the default library project.
 
         Args:
             context_description: Optional description to guide component selection.
@@ -348,7 +351,17 @@ class AssemblyToolset(BaseToolset):
             )
 
         # Fetch each contextual type directly from the catalog components endpoint
-        contextual: dict[str, dict | None] = {"audit": None, "attestation": None, "party": None}
+        contextual: dict[str, dict | None] = {
+            "audit": None,
+            "attestation": None,
+            "party": None,
+            "subject": None,
+            "provider": None,
+            "participation": None,
+            "protocol": None,
+            "workflow": None,
+            "acs": None,
+        }
 
         for slot in contextual:
             resp = await self._http.get(

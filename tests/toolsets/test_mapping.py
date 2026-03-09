@@ -105,6 +105,17 @@ async def test_list_empty(mapping_toolset: MappingToolset):
     assert results == []
 
 
+async def test_suggest_token_type(mapping_toolset: MappingToolset):
+    """Token type matches XdToken components."""
+    assert "XdToken" in TYPE_COMPATIBILITY["token"]
+
+
+async def test_suggest_string_includes_xdtoken(mapping_toolset: MappingToolset):
+    """String type now also matches XdToken components."""
+    assert "XdToken" in TYPE_COMPATIBILITY["string"]
+    assert "XdString" in TYPE_COMPATIBILITY["string"]
+
+
 async def test_get_tools_returns_three(mapping_toolset: MappingToolset):
     """get_tools returns exactly 3 tools."""
     tools = await mapping_toolset.get_tools()
