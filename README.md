@@ -2,6 +2,7 @@
 
 **Purpose-scoped ADK agents for producing SDC4-compliant data artifacts from existing datastores.**
 
+[![PyPI](https://img.shields.io/pypi/v/sdc-agents.svg)](https://pypi.org/project/sdc-agents/)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![SDC4](https://img.shields.io/badge/SDC-Generation_4-green.svg)](https://github.com/SemanticDataCharter/SDCRM)
 
