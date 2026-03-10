@@ -5,6 +5,8 @@
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![SDC4](https://img.shields.io/badge/SDC-Generation_4-green.svg)](https://github.com/SemanticDataCharter/SDCRM)
 
+![SDC Agents — The key to SDCStudio's self-assembling semantic infrastructure](SDC_Agents_Key.png)
+
 ---
 
 ## What is SDC Agents?
