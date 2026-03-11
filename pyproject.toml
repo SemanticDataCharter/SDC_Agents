@@ -4,13 +4,16 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sdc-agents"
-version = "4.1.0"
+version = "4.1.1"
 description = "Purpose-scoped ADK agents for SDC4 data operations"
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
 authors = [
     { name = "Timothy W. Cook", email = "tim@semanticdatacharter.org" },
+]
+maintainers = [
+    { name = "Axius SDC, Inc.", email = "contact@axius-sdc.com" },
 ]
 keywords = ["sdc4", "semantic-data", "adk", "agents", "xml", "rdf", "sparql", "data-modeling"]
 classifiers = [
