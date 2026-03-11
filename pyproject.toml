@@ -12,6 +12,9 @@ requires-python = ">=3.11"
 authors = [
     { name = "Timothy W. Cook", email = "tim@semanticdatacharter.org" },
 ]
+maintainers = [
+    { name = "Axius SDC, Inc.", email = "contact@axius-sdc.com" },
+]
 keywords = ["sdc4", "semantic-data", "adk", "agents", "xml", "rdf", "sparql", "data-modeling"]
 classifiers = [
     "Development Status :: 4 - Beta",

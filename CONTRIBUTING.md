@@ -247,7 +247,9 @@ All tool invocations must write to the structured audit log. Use the shared `aud
 
 ---
 
-## License
+## License & Ownership
+
+SDC Agents is copyright 2025-2026 [Axius SDC, Inc.](https://axius-sdc.github.io) and licensed under the Apache License 2.0. The [SemanticDataCharter](https://github.com/SemanticDataCharter) GitHub organization hosts the open-source SDC4 ecosystem on behalf of Axius SDC, Inc.
 
 By contributing to SDC Agents, you agree that your contributions will be licensed under the Apache License 2.0.
 

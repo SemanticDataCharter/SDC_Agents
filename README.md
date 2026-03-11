@@ -326,6 +326,10 @@ pytest tests/security/
 
 ---
 
-## License
+## License & Ownership
 
-Apache License 2.0 — see [LICENSE](LICENSE) for details.
+Copyright 2025-2026 [Axius SDC, Inc.](https://axius-sdc.github.io)
+
+Licensed under the Apache License 2.0 — see [LICENSE](LICENSE) for details.
+
+SDC Agents is controlled and maintained by Axius SDC, Inc. The [SemanticDataCharter](https://github.com/SemanticDataCharter) GitHub organization hosts the open-source SDC4 ecosystem on behalf of Axius SDC, Inc.
