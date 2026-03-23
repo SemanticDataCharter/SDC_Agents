@@ -290,7 +290,7 @@ pytest tests/security/
 | **Phase 4** | Production hardening: CLI, Docker, CI/CD, MCP export, documentation | **Complete** |
 | **Phase 5** | Knowledge Agent + Component Assembly Agent | **Complete** |
 | **Phase 5.5** | PDF/DOCX Knowledge Sources + Semantic Discovery Agent | **Complete** |
-| **Phase 6** | ADK ecosystem contributions (`adk-sparql-tools`, Integration Page) | Future |
+| **Phase 6** | ADK ecosystem contributions (`adk-sparql-tools`, Integration Page) | **Complete** |
 
 ### What's Implemented (Phases 1–3)
 
