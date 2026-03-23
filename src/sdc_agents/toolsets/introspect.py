@@ -892,7 +892,6 @@ class IntrospectToolset(BaseToolset):
         if ds.type != "sql":
             raise ValueError(f"Datasource '{datasource_name}' is type '{ds.type}', not 'sql'")
 
-        import sqlalchemy
         from sqlalchemy import inspect as sa_inspect
         from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -906,7 +905,8 @@ class IntrospectToolset(BaseToolset):
                 for tbl in table_names:
                     # Get primary keys
                     try:
-                        pk_cols = set(inspector.get_pk_constraint(tbl).get("constrained_columns", []))
+                        pk_info = inspector.get_pk_constraint(tbl)
+                        pk_cols = set(pk_info.get("constrained_columns", []))
                     except Exception:
                         pk_cols = set()
 

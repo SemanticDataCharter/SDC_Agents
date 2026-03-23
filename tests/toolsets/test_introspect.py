@@ -972,7 +972,7 @@ async def test_mongodb_validator_extraction(tmp_path: Path):
 
 
 async def test_sidecar_new_fields(tmp_path: Path):
-    """Sidecar metadata with range_values, relationships, business_rules, examples, metadata merge correctly."""
+    """Sidecar metadata with new fields merges correctly."""
     import json as json_mod
 
     csv_file = tmp_path / "data.csv"
