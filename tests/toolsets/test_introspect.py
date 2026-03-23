@@ -170,13 +170,13 @@ async def test_csv_introspect(introspect_toolset: IntrospectToolset):
     assert result["row_count"] == 5
 
     col_map = {c["name"]: c for c in result["columns"]}
-    assert col_map["test_id"]["inferred_type"] == "integer"
-    assert col_map["patient_email"]["inferred_type"] == "email"
-    assert col_map["is_critical"]["inferred_type"] == "boolean"
-    assert col_map["collected_date"]["inferred_type"] == "date"
-    assert col_map["collected_time"]["inferred_type"] == "time"
-    assert col_map["request_uuid"]["inferred_type"] == "UUID"
-    assert col_map["result"]["inferred_type"] == "decimal"
+    assert col_map["test_id"]["data_type"] == "integer"
+    assert col_map["patient_email"]["data_type"] == "email"
+    assert col_map["is_critical"]["data_type"] == "boolean"
+    assert col_map["collected_date"]["data_type"] == "date"
+    assert col_map["collected_time"]["data_type"] == "time"
+    assert col_map["request_uuid"]["data_type"] == "UUID"
+    assert col_map["result"]["data_type"] == "decimal"
 
 
 async def test_csv_wrong_datasource_type(introspect_toolset: IntrospectToolset):
@@ -256,11 +256,11 @@ async def test_json_introspect_type_inference(json_toolset: IntrospectToolset):
     """JSON introspection infers types from values."""
     result = await json_toolset.introspect_json("test_json")
     col_map = {c["name"]: c for c in result["columns"]}
-    assert col_map["test_id"]["inferred_type"] == "integer"
-    assert col_map["patient_email"]["inferred_type"] == "email"
-    assert col_map["collected_date"]["inferred_type"] == "date"
-    assert col_map["collected_time"]["inferred_type"] == "time"
-    assert col_map["request_uuid"]["inferred_type"] == "UUID"
+    assert col_map["test_id"]["data_type"] == "integer"
+    assert col_map["patient_email"]["data_type"] == "email"
+    assert col_map["collected_date"]["data_type"] == "date"
+    assert col_map["collected_time"]["data_type"] == "time"
+    assert col_map["request_uuid"]["data_type"] == "UUID"
 
 
 async def test_json_introspect_without_jsonpath(json_toolset: IntrospectToolset):
@@ -325,7 +325,7 @@ async def test_json_nested_objects(tmp_path: Path):
     toolset = IntrospectToolset(config=config)
     result = await toolset.introspect_json("nested")
     col_map = {c["name"]: c for c in result["columns"]}
-    assert col_map["address"]["inferred_type"] == "object"
+    assert col_map["address"]["data_type"] == "object"
 
 
 async def test_json_arrays(tmp_path: Path):
@@ -352,7 +352,7 @@ async def test_json_arrays(tmp_path: Path):
     toolset = IntrospectToolset(config=config)
     result = await toolset.introspect_json("arrays")
     col_map = {c["name"]: c for c in result["columns"]}
-    assert col_map["scores"]["inferred_type"] == "array"
+    assert col_map["scores"]["data_type"] == "array"
 
 
 # --- MongoDB introspection tests ---
@@ -492,8 +492,109 @@ async def test_bigquery_introspection(tmp_path: Path):
     assert result["row_count"] == 42
 
     col_map = {c["name"]: c for c in result["columns"]}
-    assert col_map["id"]["inferred_type"] == "integer"
-    assert col_map["name"]["inferred_type"] == "string"
-    assert col_map["score"]["inferred_type"] == "decimal"
+    assert col_map["id"]["data_type"] == "integer"
+    assert col_map["name"]["data_type"] == "string"
+    assert col_map["score"]["data_type"] == "decimal"
     assert col_map["id"]["sample_values"] == ["1"]
     assert col_map["name"]["sample_values"] == ["Alice"]
+
+
+# --- Column output normalization tests ---
+
+
+async def test_csv_column_output_uses_data_type(introspect_toolset: IntrospectToolset):
+    """CSV introspection uses 'data_type' field name (not 'inferred_type')."""
+    result = await introspect_toolset.introspect_csv("test_csv")
+    for col in result["columns"]:
+        assert "data_type" in col, f"Column {col['name']} missing 'data_type'"
+        assert "inferred_type" not in col, f"Column {col['name']} has legacy 'inferred_type'"
+
+
+async def test_csv_column_output_has_metadata_fields(introspect_toolset: IntrospectToolset):
+    """CSV introspection includes metadata fields with defaults."""
+    result = await introspect_toolset.introspect_csv("test_csv")
+    for col in result["columns"]:
+        assert "description" in col
+        assert "enumeration" in col
+        assert "units" in col
+        assert "nullable" in col
+        assert "constraints" in col
+
+
+async def test_csv_metadata_merge(tmp_path: Path):
+    """CSV with sidecar metadata populates description, enumeration, units."""
+    import json as json_mod
+
+    csv_file = tmp_path / "data.csv"
+    csv_file.write_text("BPXSY1,RIDAGEYR\n120,45\n118,32\n")
+
+    meta_file = tmp_path / "data.meta.json"
+    meta_file.write_text(
+        json_mod.dumps(
+            {
+                "source_format": "xpt",
+                "columns": {
+                    "BPXSY1": {
+                        "description": "Systolic: Blood pres (1st rdg) mm Hg",
+                        "value_labels": {"1": "Acceptable", "2": "Questionable"},
+                        "units": "mmHg",
+                    },
+                    "RIDAGEYR": {
+                        "label": "Age in years at screening",
+                    },
+                },
+            }
+        )
+    )
+
+    config = SDCAgentsConfig(
+        cache={"root": str(tmp_path / ".sdc-cache")},
+        audit={"path": str(tmp_path / "audit.jsonl")},
+        datasources={
+            "nhanes_bp": {
+                "type": "csv",
+                "path": str(csv_file),
+                "metadata_path": str(meta_file),
+            },
+        },
+    )
+    toolset = IntrospectToolset(config=config)
+    result = await toolset.introspect_csv("nhanes_bp")
+
+    col_map = {c["name"]: c for c in result["columns"]}
+    assert col_map["BPXSY1"]["description"] == "Systolic: Blood pres (1st rdg) mm Hg"
+    assert col_map["BPXSY1"]["enumeration"] == {"1": "Acceptable", "2": "Questionable"}
+    assert col_map["BPXSY1"]["units"] == "mmHg"
+    # RIDAGEYR uses "label" key as fallback
+    assert col_map["RIDAGEYR"]["description"] == "Age in years at screening"
+
+
+async def test_csv_metadata_missing_file(tmp_path: Path):
+    """Missing metadata file is silently ignored."""
+    csv_file = tmp_path / "data.csv"
+    csv_file.write_text("col_a,col_b\n1,2\n")
+
+    config = SDCAgentsConfig(
+        cache={"root": str(tmp_path / ".sdc-cache")},
+        audit={"path": str(tmp_path / "audit.jsonl")},
+        datasources={
+            "test_ds": {
+                "type": "csv",
+                "path": str(csv_file),
+                "metadata_path": str(tmp_path / "nonexistent.json"),
+            },
+        },
+    )
+    toolset = IntrospectToolset(config=config)
+    result = await toolset.introspect_csv("test_ds")
+    # Should succeed without error
+    assert len(result["columns"]) == 2
+    assert result["columns"][0]["description"] == ""
+
+
+async def test_json_column_output_uses_data_type(json_toolset: IntrospectToolset):
+    """JSON introspection uses 'data_type' field name (not 'inferred_type')."""
+    result = await json_toolset.introspect_json("test_json")
+    for col in result["columns"]:
+        assert "data_type" in col, f"Column {col['name']} missing 'data_type'"
+        assert "inferred_type" not in col

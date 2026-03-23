@@ -144,7 +144,8 @@ class AssemblyToolset(BaseToolset):
 
         for col in columns:
             col_name = col.get("name", "")
-            col_type = col.get("data_type", "string")
+            col_type = col.get("data_type") or col.get("inferred_type", "string")
+            col_description = col.get("description", "")
             compatible_types = TYPE_COMPATIBILITY.get(col_type, {"XdString"})
 
             best_match = None
@@ -156,7 +157,13 @@ class AssemblyToolset(BaseToolset):
                     continue
 
                 comp_label = comp.get("label", "")
-                score = self._name_similarity(col_name, comp_label)
+                name_score = self._name_similarity(col_name, comp_label)
+                desc_score = (
+                    self._name_similarity(col_description, comp_label)
+                    if col_description
+                    else 0.0
+                )
+                score = max(name_score, desc_score)
 
                 if score > best_score:
                     best_score = score
@@ -228,6 +235,8 @@ class AssemblyToolset(BaseToolset):
             ref["description"] = match["description"]
         if match.get("units"):
             ref["units"] = match["units"]
+        if match.get("enumeration"):
+            ref["enumeration"] = match["enumeration"]
         return ref
 
     async def propose_cluster_hierarchy(
@@ -255,15 +264,16 @@ class AssemblyToolset(BaseToolset):
         all_items = list(component_matches)
         if unmatched_columns:
             for col in unmatched_columns:
-                all_items.append(
-                    {
-                        "column": col.get("name", col.get("column", "")),
-                        "data_type": col.get("data_type", "XdString"),
-                        "description": col.get("description", ""),
-                        "units": col.get("units", ""),
-                        # No ct_id → mint mode
-                    }
-                )
+                item = {
+                    "column": col.get("name", col.get("column", "")),
+                    "data_type": col.get("data_type", "XdString"),
+                    "description": col.get("description", ""),
+                    "units": col.get("units", ""),
+                    # No ct_id → mint mode
+                }
+                if col.get("enumeration"):
+                    item["enumeration"] = col["enumeration"]
+                all_items.append(item)
 
         # Determine structure — flat columns vs nested
         nested_groups: dict[str, list[dict]] = {}

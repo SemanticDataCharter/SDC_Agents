@@ -290,10 +290,32 @@ class IntrospectToolset(BaseToolset):
             columns.append(
                 {
                     "name": name,
-                    "inferred_type": _infer_type(values),
+                    "data_type": _infer_type(values),
                     "sample_values": values[:5],
+                    "description": "",
+                    "enumeration": None,
+                    "units": "",
+                    "nullable": None,
+                    "constraints": {},
                 }
             )
+
+        # Merge sidecar metadata if configured
+        metadata_path = ds.metadata_path
+        if metadata_path:
+            meta_file = Path(metadata_path)
+            if meta_file.is_file():
+                sidecar = json.loads(meta_file.read_text())
+                col_meta = sidecar.get("columns", {})
+                for col in columns:
+                    meta = col_meta.get(col["name"], {})
+                    desc = meta.get("description") or meta.get("label", "")
+                    if desc:
+                        col["description"] = desc
+                    if meta.get("value_labels"):
+                        col["enumeration"] = meta["value_labels"]
+                    if meta.get("units"):
+                        col["units"] = meta["units"]
 
         result = {
             "datasource": datasource_name,
@@ -386,10 +408,32 @@ class IntrospectToolset(BaseToolset):
             columns.append(
                 {
                     "name": name,
-                    "inferred_type": inferred,
+                    "data_type": inferred,
                     "sample_values": values[:5],
+                    "description": "",
+                    "enumeration": None,
+                    "units": "",
+                    "nullable": None,
+                    "constraints": {},
                 }
             )
+
+        # Merge sidecar metadata if configured
+        metadata_path = ds.metadata_path
+        if metadata_path:
+            meta_file = Path(metadata_path)
+            if meta_file.is_file():
+                sidecar = json.loads(meta_file.read_text())
+                col_meta = sidecar.get("columns", {})
+                for col in columns:
+                    meta = col_meta.get(col["name"], {})
+                    desc = meta.get("description") or meta.get("label", "")
+                    if desc:
+                        col["description"] = desc
+                    if meta.get("value_labels"):
+                        col["enumeration"] = meta["value_labels"]
+                    if meta.get("units"):
+                        col["units"] = meta["units"]
 
         result = {
             "datasource": datasource_name,
@@ -493,8 +537,13 @@ class IntrospectToolset(BaseToolset):
                     {
                         "name": name,
                         "bson_type": bson_type,
+                        "data_type": _BSON_TYPE_MAP.get(bson_type, "string"),
                         "nullable": info["nullable"],
                         "sample_values": info["sample_values"],
+                        "description": "",
+                        "enumeration": None,
+                        "units": "",
+                        "constraints": {},
                     }
                 )
         finally:
@@ -573,8 +622,13 @@ class IntrospectToolset(BaseToolset):
                         columns.append(
                             {
                                 "name": field.name,
-                                "inferred_type": inferred,
+                                "data_type": inferred,
                                 "sample_values": [],
+                                "description": "",
+                                "enumeration": None,
+                                "units": "",
+                                "nullable": None,
+                                "constraints": {},
                             }
                         )
 
@@ -612,8 +666,13 @@ class IntrospectToolset(BaseToolset):
                             columns.append(
                                 {
                                     "name": field.name,
-                                    "inferred_type": inferred,
+                                    "data_type": inferred,
                                     "sample_values": [],
+                                    "description": "",
+                                    "enumeration": None,
+                                    "units": "",
+                                    "nullable": None,
+                                    "constraints": {},
                                 }
                             )
                         table_list.append(
