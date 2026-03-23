@@ -85,6 +85,100 @@ _BIGQUERY_TYPE_MAP = {
     "GEOGRAPHY": "string",
 }
 
+# SQL type name to inferred type mapping (case-insensitive lookup via upper())
+_SQL_TYPE_MAP = {
+    "INTEGER": "integer",
+    "INT": "integer",
+    "SMALLINT": "integer",
+    "BIGINT": "integer",
+    "TINYINT": "integer",
+    "MEDIUMINT": "integer",
+    "SERIAL": "integer",
+    "REAL": "decimal",
+    "FLOAT": "decimal",
+    "DOUBLE": "decimal",
+    "DOUBLE PRECISION": "decimal",
+    "NUMERIC": "decimal",
+    "DECIMAL": "decimal",
+    "MONEY": "decimal",
+    "VARCHAR": "string",
+    "CHAR": "string",
+    "CHARACTER VARYING": "string",
+    "TEXT": "string",
+    "CLOB": "string",
+    "NVARCHAR": "string",
+    "NCHAR": "string",
+    "NTEXT": "string",
+    "BOOLEAN": "boolean",
+    "BOOL": "boolean",
+    "DATE": "date",
+    "DATETIME": "datetime",
+    "DATETIME2": "datetime",
+    "TIMESTAMP": "datetime",
+    "TIMESTAMP WITHOUT TIME ZONE": "datetime",
+    "TIMESTAMP WITH TIME ZONE": "datetime",
+    "TIME": "time",
+    "TIME WITHOUT TIME ZONE": "time",
+    "TIME WITH TIME ZONE": "time",
+    "BLOB": "binary",
+    "BYTEA": "binary",
+    "BINARY": "binary",
+    "VARBINARY": "binary",
+    "IMAGE": "binary",
+    "JSON": "object",
+    "JSONB": "object",
+    "XML": "string",
+    "UUID": "UUID",
+    "UNIQUEIDENTIFIER": "UUID",
+    "ARRAY": "array",
+    "INET": "string",
+    "CIDR": "string",
+    "MACADDR": "string",
+}
+
+
+def _sql_type_to_inferred(sql_type_str: str) -> str:
+    """Map a raw SQL type string to an inferred type.
+
+    Handles parameterized types like VARCHAR(255) by stripping the parenthetical.
+    """
+    # Strip parenthetical (e.g., "VARCHAR(255)" -> "VARCHAR")
+    base = sql_type_str.split("(")[0].strip().upper()
+    return _SQL_TYPE_MAP.get(base, "string")
+
+
+def _make_column(
+    name: str,
+    data_type: str,
+    sample_values: list | None = None,
+    description: str = "",
+    enumeration: dict | None = None,
+    units: str = "",
+    nullable: bool | None = None,
+    constraints: dict | None = None,
+    range_values: str = "",
+    relationships: str = "",
+    business_rules: str = "",
+    examples: str = "",
+    metadata: dict | None = None,
+) -> dict:
+    """Build a standardized column dict for introspection output."""
+    return {
+        "name": name,
+        "data_type": data_type,
+        "sample_values": sample_values or [],
+        "description": description,
+        "enumeration": enumeration,
+        "units": units,
+        "nullable": nullable,
+        "constraints": constraints or {},
+        "range_values": range_values,
+        "relationships": relationships,
+        "business_rules": business_rules,
+        "examples": examples,
+        "metadata": metadata or {},
+    }
+
 
 def _infer_type(values: list[str]) -> str:
     """Infer the most specific type from a list of sample string values.
@@ -181,6 +275,7 @@ class IntrospectToolset(BaseToolset):
         """Return the introspection tools as FunctionTool instances."""
         tools = [
             FunctionTool(self.introspect_sql),
+            FunctionTool(self.introspect_sql_schema),
             FunctionTool(self.introspect_csv),
             FunctionTool(self.introspect_json),
             FunctionTool(self.introspect_mongodb),
@@ -288,16 +383,11 @@ class IntrospectToolset(BaseToolset):
         for name in fieldnames:
             values = column_values[name]
             columns.append(
-                {
-                    "name": name,
-                    "data_type": _infer_type(values),
-                    "sample_values": values[:5],
-                    "description": "",
-                    "enumeration": None,
-                    "units": "",
-                    "nullable": None,
-                    "constraints": {},
-                }
+                _make_column(
+                    name=name,
+                    data_type=_infer_type(values),
+                    sample_values=values[:5],
+                )
             )
 
         # Merge sidecar metadata if configured
@@ -316,6 +406,16 @@ class IntrospectToolset(BaseToolset):
                         col["enumeration"] = meta["value_labels"]
                     if meta.get("units"):
                         col["units"] = meta["units"]
+                    if meta.get("range_values"):
+                        col["range_values"] = meta["range_values"]
+                    if meta.get("relationships"):
+                        col["relationships"] = meta["relationships"]
+                    if meta.get("business_rules"):
+                        col["business_rules"] = meta["business_rules"]
+                    if meta.get("examples"):
+                        col["examples"] = meta["examples"]
+                    if meta.get("metadata"):
+                        col["metadata"].update(meta["metadata"])
 
         result = {
             "datasource": datasource_name,
@@ -406,16 +506,11 @@ class IntrospectToolset(BaseToolset):
                     inferred = "array"
 
             columns.append(
-                {
-                    "name": name,
-                    "data_type": inferred,
-                    "sample_values": values[:5],
-                    "description": "",
-                    "enumeration": None,
-                    "units": "",
-                    "nullable": None,
-                    "constraints": {},
-                }
+                _make_column(
+                    name=name,
+                    data_type=inferred,
+                    sample_values=values[:5],
+                )
             )
 
         # Merge sidecar metadata if configured
@@ -434,6 +529,16 @@ class IntrospectToolset(BaseToolset):
                         col["enumeration"] = meta["value_labels"]
                     if meta.get("units"):
                         col["units"] = meta["units"]
+                    if meta.get("range_values"):
+                        col["range_values"] = meta["range_values"]
+                    if meta.get("relationships"):
+                        col["relationships"] = meta["relationships"]
+                    if meta.get("business_rules"):
+                        col["business_rules"] = meta["business_rules"]
+                    if meta.get("examples"):
+                        col["examples"] = meta["examples"]
+                    if meta.get("metadata"):
+                        col["metadata"].update(meta["metadata"])
 
         result = {
             "datasource": datasource_name,
@@ -498,6 +603,18 @@ class IntrospectToolset(BaseToolset):
             db = client[db_name]
             coll = db[coll_name]
 
+            # Try to fetch JSON Schema validator for native metadata
+            validator_schema: dict | None = None
+            try:
+                coll_info = await db.command("listCollections", filter={"name": coll_name})
+                first_batch = coll_info.get("cursor", {}).get("firstBatch", [])
+                if first_batch:
+                    options = first_batch[0].get("options", {})
+                    validator = options.get("validator", {})
+                    validator_schema = validator.get("$jsonSchema")
+            except Exception:
+                pass  # No validator — proceed with sampling only
+
             # Sample documents (read-only)
             cursor = coll.find().limit(sample_size)
             docs = await cursor.to_list(length=sample_size)
@@ -528,24 +645,68 @@ class IntrospectToolset(BaseToolset):
                     if known_key not in doc:
                         field_info[known_key]["nullable"] = True
 
+            # Extract validator metadata per field
+            validator_props = {}
+            validator_required: set = set()
+            if validator_schema:
+                validator_props = validator_schema.get("properties", {})
+                validator_required = set(validator_schema.get("required", []))
+
             fields = []
             for name, info in field_info.items():
                 # Pick the most common non-null type
                 types = info["types"] - {"null"}
                 bson_type = next(iter(types)) if types else "null"
-                fields.append(
-                    {
-                        "name": name,
-                        "bson_type": bson_type,
-                        "data_type": _BSON_TYPE_MAP.get(bson_type, "string"),
-                        "nullable": info["nullable"],
-                        "sample_values": info["sample_values"],
-                        "description": "",
-                        "enumeration": None,
-                        "units": "",
-                        "constraints": {},
-                    }
+
+                # Build constraints and metadata from validator
+                description = ""
+                enumeration = None
+                constraints: dict = {}
+                range_values = ""
+                business_rules = ""
+                field_metadata = {"bson_type": bson_type}
+
+                vprop = validator_props.get(name, {})
+                if vprop:
+                    if vprop.get("description"):
+                        description = vprop["description"]
+                    if vprop.get("enum"):
+                        enumeration = {str(v): str(v) for v in vprop["enum"]}
+                    if "minimum" in vprop or "maximum" in vprop:
+                        if "minimum" in vprop:
+                            constraints["min"] = vprop["minimum"]
+                        if "maximum" in vprop:
+                            constraints["max"] = vprop["maximum"]
+                        parts = []
+                        if "minimum" in vprop:
+                            parts.append(f"min={vprop['minimum']}")
+                        if "maximum" in vprop:
+                            parts.append(f"max={vprop['maximum']}")
+                        range_values = ", ".join(parts)
+                    if vprop.get("pattern"):
+                        constraints["pattern"] = vprop["pattern"]
+                        business_rules = f"pattern: {vprop['pattern']}"
+
+                # Merge validator required with sampling-based nullable
+                nullable = info["nullable"]
+                if name in validator_required and not info["nullable"]:
+                    nullable = False
+
+                col = _make_column(
+                    name=name,
+                    data_type=_BSON_TYPE_MAP.get(bson_type, "string"),
+                    sample_values=info["sample_values"],
+                    description=description,
+                    enumeration=enumeration,
+                    nullable=nullable,
+                    constraints=constraints,
+                    range_values=range_values,
+                    business_rules=business_rules,
+                    metadata=field_metadata,
                 )
+                # Preserve backward-compat bson_type at top level
+                col["bson_type"] = bson_type
+                fields.append(col)
         finally:
             client.close()
 
@@ -607,6 +768,33 @@ class IntrospectToolset(BaseToolset):
 
         from google.cloud import bigquery
 
+        def _bq_field_to_column(field) -> dict:
+            """Convert a BigQuery SchemaField to a standardized column dict."""
+            inferred = _BIGQUERY_TYPE_MAP.get(field.field_type, "string")
+            # Native metadata extraction
+            nullable = None
+            if field.mode == "REQUIRED":
+                nullable = False
+            elif field.mode in ("NULLABLE", "REPEATED"):
+                nullable = True
+
+            relationships = ""
+            if field.field_type in ("STRUCT", "RECORD") and field.fields:
+                child_names = ", ".join(f.name for f in field.fields)
+                relationships = f"STRUCT with fields: {child_names}"
+
+            return _make_column(
+                name=field.name,
+                data_type=inferred,
+                description=field.description or "",
+                nullable=nullable,
+                relationships=relationships,
+                metadata={
+                    "bigquery_type": field.field_type,
+                    "bigquery_mode": field.mode,
+                },
+            )
+
         def _run_sync():
             client = bigquery.Client(project=project)
             try:
@@ -616,21 +804,7 @@ class IntrospectToolset(BaseToolset):
                     bq_table = client.get_table(table_ref)
 
                     # Get schema fields
-                    columns = []
-                    for field in bq_table.schema:
-                        inferred = _BIGQUERY_TYPE_MAP.get(field.field_type, "string")
-                        columns.append(
-                            {
-                                "name": field.name,
-                                "data_type": inferred,
-                                "sample_values": [],
-                                "description": "",
-                                "enumeration": None,
-                                "units": "",
-                                "nullable": None,
-                                "constraints": {},
-                            }
-                        )
+                    columns = [_bq_field_to_column(f) for f in bq_table.schema]
 
                     # Get sample rows
                     rows_iter = client.list_rows(bq_table, max_results=max_rows)
@@ -660,21 +834,7 @@ class IntrospectToolset(BaseToolset):
                     table_list = []
                     for tbl in tables:
                         full_table = client.get_table(tbl.reference)
-                        columns = []
-                        for field in full_table.schema:
-                            inferred = _BIGQUERY_TYPE_MAP.get(field.field_type, "string")
-                            columns.append(
-                                {
-                                    "name": field.name,
-                                    "data_type": inferred,
-                                    "sample_values": [],
-                                    "description": "",
-                                    "enumeration": None,
-                                    "units": "",
-                                    "nullable": None,
-                                    "constraints": {},
-                                }
-                            )
+                        columns = [_bq_field_to_column(f) for f in full_table.schema]
                         table_list.append(
                             {
                                 "table": tbl.table_id,
@@ -702,6 +862,143 @@ class IntrospectToolset(BaseToolset):
                 "table": table,
                 "max_rows": max_rows,
             },
+            outputs=result,
+            start_time=start,
+        )
+        return result
+
+    async def introspect_sql_schema(
+        self,
+        datasource_name: str,
+        table_name: str | None = None,
+    ) -> dict:
+        """Introspect a SQL database schema using catalog metadata.
+
+        Uses SQLAlchemy's inspector to extract column types, nullability,
+        primary keys, foreign keys, check constraints, and defaults.
+
+        Args:
+            datasource_name: Name of a configured SQL datasource (from config).
+            table_name: Specific table to introspect. If omitted, introspects
+                all tables in the database.
+
+        Returns:
+            Dict with datasource, type, and tables (each with columns in
+            standardized 13-field format).
+        """
+        start = time.monotonic()
+        ds = self._get_datasource(datasource_name)
+
+        if ds.type != "sql":
+            raise ValueError(f"Datasource '{datasource_name}' is type '{ds.type}', not 'sql'")
+
+        import sqlalchemy
+        from sqlalchemy import inspect as sa_inspect
+        from sqlalchemy.ext.asyncio import create_async_engine
+
+        engine = create_async_engine(ds.connection_string)
+        try:
+
+            def _inspect_sync(conn):
+                inspector = sa_inspect(conn)
+                table_names = [table_name] if table_name else inspector.get_table_names()
+                tables = []
+                for tbl in table_names:
+                    # Get primary keys
+                    try:
+                        pk_cols = set(inspector.get_pk_constraint(tbl).get("constrained_columns", []))
+                    except Exception:
+                        pk_cols = set()
+
+                    # Get foreign keys
+                    fk_map: dict[str, str] = {}
+                    try:
+                        for fk in inspector.get_foreign_keys(tbl):
+                            ref_table = fk.get("referred_table", "")
+                            ref_cols = fk.get("referred_columns", [])
+                            for i, col_name in enumerate(fk.get("constrained_columns", [])):
+                                ref_col = ref_cols[i] if i < len(ref_cols) else ""
+                                fk_map[col_name] = f"{ref_table}.{ref_col}"
+                    except Exception:
+                        pass
+
+                    # Get check constraints
+                    check_map: dict[str, list[str]] = {}
+                    try:
+                        for ck in inspector.get_check_constraints(tbl):
+                            sqltext = ck.get("sqltext", "")
+                            # Try to associate with columns mentioned in the expression
+                            for col_info in inspector.get_columns(tbl):
+                                if col_info["name"] in sqltext:
+                                    check_map.setdefault(col_info["name"], []).append(sqltext)
+                    except Exception:
+                        pass
+
+                    # Get columns
+                    columns = []
+                    for col_info in inspector.get_columns(tbl):
+                        col_name = col_info["name"]
+                        raw_type = str(col_info["type"])
+                        inferred = _sql_type_to_inferred(raw_type)
+
+                        # Build constraints
+                        constraints: dict = {}
+                        if col_name in pk_cols:
+                            constraints["primary_key"] = True
+                        if col_info.get("autoincrement") is True:
+                            constraints["autoincrement"] = True
+                        if col_info.get("default") is not None:
+                            default_val = col_info["default"]
+                            if hasattr(default_val, "arg"):
+                                constraints["default"] = str(default_val.arg)
+                            else:
+                                constraints["default"] = str(default_val)
+
+                        # Relationships from FK
+                        relationships = fk_map.get(col_name, "")
+
+                        # Business rules from CHECK constraints
+                        checks = check_map.get(col_name, [])
+                        business_rules = "; ".join(checks) if checks else ""
+
+                        # Description from column comment (PostgreSQL/MySQL)
+                        description = col_info.get("comment", "") or ""
+
+                        columns.append(
+                            _make_column(
+                                name=col_name,
+                                data_type=inferred,
+                                nullable=col_info.get("nullable"),
+                                description=description,
+                                constraints=constraints,
+                                relationships=relationships,
+                                business_rules=business_rules,
+                                metadata={"sql_type": raw_type},
+                            )
+                        )
+                    tables.append(
+                        {
+                            "table": tbl,
+                            "columns": columns,
+                        }
+                    )
+                return tables
+
+            async with engine.connect() as conn:
+                tables = await conn.run_sync(_inspect_sync)
+        finally:
+            await engine.dispose()
+
+        result = {
+            "datasource": datasource_name,
+            "type": "sql",
+            "tables": tables,
+        }
+
+        self._audit.log(
+            agent="introspect",
+            tool="introspect_sql_schema",
+            inputs={"datasource_name": datasource_name, "table_name": table_name},
             outputs=result,
             start_time=start,
         )
