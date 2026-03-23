@@ -539,3 +539,141 @@ async def test_assemble_model_uses_token_auth(assembly_config):
     # The injected client won't have headers, but verify no Bearer was added
     auth = captured_headers.get("authorization", "")
     assert "Bearer" not in auth
+
+
+# --- Description-based matching ---
+
+
+async def test_discover_description_matching(assembly_config, assembly_client, tmp_path):
+    """Column with coded name + description matches component by description."""
+    toolset = AssemblyToolset(config=assembly_config, http_client=assembly_client)
+
+    # Introspection with coded column name but human-readable description
+    intro_dir = tmp_path / ".sdc-cache" / "introspections"
+    intro_dir.mkdir(parents=True, exist_ok=True)
+    introspection = {
+        "columns": [
+            {
+                "name": "BPXSY1",
+                "data_type": "decimal",
+                "description": "Systolic Blood Pressure",
+            },
+        ]
+    }
+    (intro_dir / "nhanes_bp.json").write_text(json.dumps(introspection))
+
+    # Schema with component matching the description
+    schema_dir = tmp_path / ".sdc-cache" / "schemas"
+    schema_dir.mkdir(parents=True, exist_ok=True)
+    schema = {
+        "components": [
+            {
+                "type": "XdQuantity",
+                "ct_id": "clxdqty_bp",
+                "label": "systolic-blood-pressure",
+            },
+        ]
+    }
+    (schema_dir / "clschema_bp.json").write_text(json.dumps(schema))
+
+    result = await toolset.discover_components("nhanes_bp", schema_ct_id="clschema_bp")
+
+    # "BPXSY1" alone would score low, but "Systolic Blood Pressure" matches well
+    assert len(result["matches"]) == 1
+    assert result["matches"][0]["column"] == "BPXSY1"
+    assert result["matches"][0]["ct_id"] == "clxdqty_bp"
+
+
+async def test_discover_description_beats_name(assembly_config, assembly_client, tmp_path):
+    """Description match wins when name score is low."""
+    toolset = AssemblyToolset(config=assembly_config, http_client=assembly_client)
+
+    intro_dir = tmp_path / ".sdc-cache" / "introspections"
+    intro_dir.mkdir(parents=True, exist_ok=True)
+    introspection = {
+        "columns": [
+            {
+                "name": "RIDAGEYR",
+                "data_type": "integer",
+                "description": "Age in years at screening",
+            },
+        ]
+    }
+    (intro_dir / "nhanes.json").write_text(json.dumps(introspection))
+
+    schema_dir = tmp_path / ".sdc-cache" / "schemas"
+    schema_dir.mkdir(parents=True, exist_ok=True)
+    schema = {
+        "components": [
+            {"type": "XdCount", "ct_id": "clxdcnt_age", "label": "age-in-years"},
+        ]
+    }
+    (schema_dir / "clschema_demo.json").write_text(json.dumps(schema))
+
+    result = await toolset.discover_components("nhanes", schema_ct_id="clschema_demo")
+
+    assert len(result["matches"]) == 1
+    assert result["matches"][0]["ct_id"] == "clxdcnt_age"
+    # Score should be > 0.3 (from description match)
+    assert result["matches"][0]["score"] > 0.3
+
+
+async def test_backward_compat_inferred_type(assembly_config, assembly_client, tmp_path):
+    """Old cache files with inferred_type still work via fallback."""
+    toolset = AssemblyToolset(config=assembly_config, http_client=assembly_client)
+
+    intro_dir = tmp_path / ".sdc-cache" / "introspections"
+    intro_dir.mkdir(parents=True, exist_ok=True)
+    # Old-style cache with inferred_type
+    introspection = {
+        "columns": [
+            {"name": "test_name", "inferred_type": "string"},
+        ]
+    }
+    (intro_dir / "old_ds.json").write_text(json.dumps(introspection))
+
+    schema_dir = tmp_path / ".sdc-cache" / "schemas"
+    schema_dir.mkdir(parents=True, exist_ok=True)
+    schema = {
+        "components": [
+            {"type": "XdString", "ct_id": "clxdstr001", "label": "test-name"},
+        ]
+    }
+    (schema_dir / "clschema_old.json").write_text(json.dumps(schema))
+
+    result = await toolset.discover_components("old_ds", schema_ct_id="clschema_old")
+
+    # Should still match despite using inferred_type
+    assert len(result["matches"]) == 1
+    assert result["matches"][0]["ct_id"] == "clxdstr001"
+
+
+async def test_mint_ref_carries_metadata(assembly_config, assembly_client):
+    """Unmatched columns pass description/units/enumeration to mint refs."""
+    toolset = AssemblyToolset(config=assembly_config, http_client=assembly_client)
+
+    matches = [
+        {"column": "test_name", "ct_id": "clxdstr001", "label": "test-name", "type": "XdString"},
+    ]
+    unmatched = [
+        {
+            "name": "BPXSY1",
+            "data_type": "XdQuantity",
+            "description": "Systolic Blood Pressure",
+            "units": "mmHg",
+            "enumeration": {"1": "Acceptable", "2": "Questionable"},
+        },
+    ]
+
+    result = await toolset.propose_cluster_hierarchy("nhanes_bp", matches, unmatched)
+
+    hierarchy = result["hierarchy"]
+    # Find the mint ref
+    mint_refs = [c for c in hierarchy["components"] if "ct_id" not in c]
+    assert len(mint_refs) == 1
+    ref = mint_refs[0]
+    assert ref["label"] == "BPXSY1"
+    assert ref["data_type"] == "XdQuantity"
+    assert ref["description"] == "Systolic Blood Pressure"
+    assert ref["units"] == "mmHg"
+    assert ref["enumeration"] == {"1": "Acceptable", "2": "Questionable"}

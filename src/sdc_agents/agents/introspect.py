@@ -14,8 +14,9 @@ def create_introspect_agent(
 ) -> LlmAgent:
     """Create an Introspect Agent for datasource structure discovery.
 
-    The agent can execute read-only SQL queries and introspect CSV files
-    to discover column structure and infer data types.
+    The agent can execute read-only SQL queries, introspect SQL database
+    schemas, and analyze CSV, JSON, MongoDB, and BigQuery datasources
+    to discover structure, types, and native metadata.
     No network access, no file writes.
 
     Args:
@@ -29,7 +30,8 @@ def create_introspect_agent(
         name="introspect_agent",
         model=model,
         description=(
-            "Extracts structure from customer datasources (SQL databases, CSV files). "
+            "Extracts structure from customer datasources "
+            "(SQL databases, CSV, JSON, MongoDB, BigQuery). "
             "Read-only access, no network calls."
         ),
         instruction=(
@@ -37,7 +39,13 @@ def create_introspect_agent(
             "the structure of their datasources.\n\n"
             "You can:\n"
             "- Execute SELECT queries against configured SQL datasources\n"
-            "- Introspect CSV files to discover columns and infer types\n\n"
+            "- Introspect SQL database schemas (columns, types, keys, constraints)\n"
+            "- Introspect CSV files to discover columns and infer types\n"
+            "- Introspect JSON files with optional JSONPath extraction\n"
+            "- Introspect MongoDB collections with native validator metadata\n"
+            "- Introspect BigQuery tables with native schema metadata\n\n"
+            "All introspection tools return a standardized 13-field column format "
+            "including description, constraints, relationships, and metadata.\n\n"
             "You CANNOT:\n"
             "- Execute write operations (INSERT, UPDATE, DELETE, DROP, etc.)\n"
             "- Access the SDCStudio API\n"

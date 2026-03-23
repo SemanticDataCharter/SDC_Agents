@@ -75,6 +75,7 @@ class DatasourceConfig(BaseModel):
     collection: Optional[str] = None  # MongoDB collection name
     project: Optional[str] = None  # GCP project ID for BigQuery
     dataset: Optional[str] = None  # BigQuery dataset name
+    metadata_path: Optional[str] = None  # Path to sidecar metadata JSON
 
 
 class DestinationConfig(BaseModel):

@@ -36,38 +36,39 @@ def make_sql_introspection() -> dict:
     }
 
 
+def _col(name, data_type, sample_values=None, **overrides):
+    """Build a 13-field column dict for fixture use."""
+    col = {
+        "name": name,
+        "data_type": data_type,
+        "sample_values": sample_values or [],
+        "description": "",
+        "enumeration": None,
+        "units": "",
+        "nullable": None,
+        "constraints": {},
+        "range_values": "",
+        "relationships": "",
+        "business_rules": "",
+        "examples": "",
+        "metadata": {},
+    }
+    col.update(overrides)
+    return col
+
+
 def make_csv_introspection() -> dict:
     """Sample CSV introspection result."""
     return {
         "datasource": "lab_results_csv",
         "type": "csv",
         "columns": [
-            {"name": "test_id", "inferred_type": "integer", "sample_values": ["1", "2", "3"]},
-            {
-                "name": "patient_email",
-                "inferred_type": "email",
-                "sample_values": ["a@b.com", "c@d.org"],
-            },
-            {
-                "name": "test_name",
-                "inferred_type": "string",
-                "sample_values": ["CBC", "BMP", "Lipid Panel"],
-            },
-            {
-                "name": "result",
-                "inferred_type": "decimal",
-                "sample_values": ["98.6", "120.5", "85.0"],
-            },
-            {
-                "name": "is_critical",
-                "inferred_type": "boolean",
-                "sample_values": ["true", "false", "true"],
-            },
-            {
-                "name": "collected_date",
-                "inferred_type": "date",
-                "sample_values": ["2026-01-15", "2026-01-16"],
-            },
+            _col("test_id", "integer", ["1", "2", "3"]),
+            _col("patient_email", "email", ["a@b.com", "c@d.org"]),
+            _col("test_name", "string", ["CBC", "BMP", "Lipid Panel"]),
+            _col("result", "decimal", ["98.6", "120.5", "85.0"]),
+            _col("is_critical", "boolean", ["true", "false", "true"]),
+            _col("collected_date", "date", ["2026-01-15", "2026-01-16"]),
         ],
         "row_count": 50,
     }
@@ -79,32 +80,12 @@ def make_json_introspection() -> dict:
         "datasource": "records_json",
         "type": "json",
         "columns": [
-            {"name": "test_id", "inferred_type": "integer", "sample_values": [1, 2, 3]},
-            {
-                "name": "patient_email",
-                "inferred_type": "email",
-                "sample_values": ["alice@example.com", "bob@example.com"],
-            },
-            {
-                "name": "test_name",
-                "inferred_type": "string",
-                "sample_values": ["CBC", "BMP", "Lipid Panel"],
-            },
-            {
-                "name": "result",
-                "inferred_type": "decimal",
-                "sample_values": [98.6, 120.5, 85.0],
-            },
-            {
-                "name": "is_critical",
-                "inferred_type": "boolean",
-                "sample_values": [True, False, True],
-            },
-            {
-                "name": "collected_date",
-                "inferred_type": "date",
-                "sample_values": ["2026-01-15", "2026-01-16"],
-            },
+            _col("test_id", "integer", [1, 2, 3]),
+            _col("patient_email", "email", ["alice@example.com", "bob@example.com"]),
+            _col("test_name", "string", ["CBC", "BMP", "Lipid Panel"]),
+            _col("result", "decimal", [98.6, 120.5, 85.0]),
+            _col("is_critical", "boolean", [True, False, True]),
+            _col("collected_date", "date", ["2026-01-15", "2026-01-16"]),
         ],
         "row_count": 5,
     }
@@ -117,34 +98,54 @@ def make_mongodb_introspection() -> dict:
         "collection": "lab_results",
         "fields": [
             {
-                "name": "_id",
+                **_col(
+                    "_id",
+                    "objectId",
+                    ["507f1f77bcf86cd799439011"],
+                    nullable=False,
+                    metadata={"bson_type": "objectId"},
+                ),
                 "bson_type": "objectId",
-                "nullable": False,
-                "sample_values": ["507f1f77bcf86cd799439011"],
             },
             {
-                "name": "test_name",
+                **_col(
+                    "test_name",
+                    "string",
+                    ["CBC", "BMP"],
+                    nullable=False,
+                    metadata={"bson_type": "string"},
+                ),
                 "bson_type": "string",
-                "nullable": False,
-                "sample_values": ["CBC", "BMP"],
             },
             {
-                "name": "result_value",
+                **_col(
+                    "result_value",
+                    "decimal",
+                    [98.6, 120.5],
+                    nullable=True,
+                    metadata={"bson_type": "double"},
+                ),
                 "bson_type": "double",
-                "nullable": True,
-                "sample_values": [98.6, 120.5],
             },
             {
-                "name": "is_abnormal",
+                **_col(
+                    "is_abnormal",
+                    "boolean",
+                    [True, False],
+                    nullable=False,
+                    metadata={"bson_type": "bool"},
+                ),
                 "bson_type": "bool",
-                "nullable": False,
-                "sample_values": [True, False],
             },
             {
-                "name": "collected_at",
+                **_col(
+                    "collected_at",
+                    "datetime",
+                    ["2026-01-15T08:30:00Z"],
+                    nullable=False,
+                    metadata={"bson_type": "date"},
+                ),
                 "bson_type": "date",
-                "nullable": False,
-                "sample_values": ["2026-01-15T08:30:00Z"],
             },
         ],
         "document_count": 100,
@@ -159,39 +160,48 @@ def make_bigquery_introspection() -> dict:
         "dataset": "clinical_data",
         "table": "lab_results",
         "columns": [
-            {
-                "name": "test_id",
-                "inferred_type": "integer",
-                "sample_values": ["1", "2", "3"],
-            },
-            {
-                "name": "patient_name",
-                "inferred_type": "string",
-                "sample_values": ["Alice", "Bob", "Carol"],
-            },
-            {
-                "name": "result_value",
-                "inferred_type": "decimal",
-                "sample_values": ["98.6", "120.5", "85.0"],
-            },
-            {
-                "name": "is_critical",
-                "inferred_type": "boolean",
-                "sample_values": ["True", "False", "True"],
-            },
-            {
-                "name": "collected_date",
-                "inferred_type": "date",
-                "sample_values": ["2026-01-15", "2026-01-16", "2026-01-17"],
-            },
-            {
-                "name": "collected_at",
-                "inferred_type": "datetime",
-                "sample_values": [
-                    "2026-01-15 08:30:00+00:00",
-                    "2026-01-16 09:15:00+00:00",
-                ],
-            },
+            _col(
+                "test_id",
+                "integer",
+                ["1", "2", "3"],
+                nullable=False,
+                metadata={"bigquery_type": "INT64", "bigquery_mode": "REQUIRED"},
+            ),
+            _col(
+                "patient_name",
+                "string",
+                ["Alice", "Bob", "Carol"],
+                nullable=True,
+                metadata={"bigquery_type": "STRING", "bigquery_mode": "NULLABLE"},
+            ),
+            _col(
+                "result_value",
+                "decimal",
+                ["98.6", "120.5", "85.0"],
+                nullable=True,
+                metadata={"bigquery_type": "FLOAT64", "bigquery_mode": "NULLABLE"},
+            ),
+            _col(
+                "is_critical",
+                "boolean",
+                ["True", "False", "True"],
+                nullable=True,
+                metadata={"bigquery_type": "BOOL", "bigquery_mode": "NULLABLE"},
+            ),
+            _col(
+                "collected_date",
+                "date",
+                ["2026-01-15", "2026-01-16", "2026-01-17"],
+                nullable=True,
+                metadata={"bigquery_type": "DATE", "bigquery_mode": "NULLABLE"},
+            ),
+            _col(
+                "collected_at",
+                "datetime",
+                ["2026-01-15 08:30:00+00:00", "2026-01-16 09:15:00+00:00"],
+                nullable=True,
+                metadata={"bigquery_type": "TIMESTAMP", "bigquery_mode": "NULLABLE"},
+            ),
         ],
         "row_count": 1500,
     }

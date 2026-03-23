@@ -23,6 +23,10 @@ datasources:
   patient_csv:
     type: "csv"
     path: "/data/exports/patients.csv"
+  nhanes_bp:
+    type: "csv"
+    path: "source_data/nhanes/BPX_J.csv"
+    metadata_path: "source_data/nhanes/BPX_J.meta.json"  # SAS labels + value maps
   records_json:
     type: "json"
     path: "/data/exports/records.json"

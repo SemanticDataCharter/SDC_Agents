@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from sdc_agents.common.config import SDCAgentsConfig
-from sdc_agents.toolsets.introspect import IntrospectToolset, _infer_type
+from sdc_agents.toolsets.introspect import IntrospectToolset, _infer_type, _make_column
 
 
 @pytest.fixture
@@ -170,13 +170,13 @@ async def test_csv_introspect(introspect_toolset: IntrospectToolset):
     assert result["row_count"] == 5
 
     col_map = {c["name"]: c for c in result["columns"]}
-    assert col_map["test_id"]["inferred_type"] == "integer"
-    assert col_map["patient_email"]["inferred_type"] == "email"
-    assert col_map["is_critical"]["inferred_type"] == "boolean"
-    assert col_map["collected_date"]["inferred_type"] == "date"
-    assert col_map["collected_time"]["inferred_type"] == "time"
-    assert col_map["request_uuid"]["inferred_type"] == "UUID"
-    assert col_map["result"]["inferred_type"] == "decimal"
+    assert col_map["test_id"]["data_type"] == "integer"
+    assert col_map["patient_email"]["data_type"] == "email"
+    assert col_map["is_critical"]["data_type"] == "boolean"
+    assert col_map["collected_date"]["data_type"] == "date"
+    assert col_map["collected_time"]["data_type"] == "time"
+    assert col_map["request_uuid"]["data_type"] == "UUID"
+    assert col_map["result"]["data_type"] == "decimal"
 
 
 async def test_csv_wrong_datasource_type(introspect_toolset: IntrospectToolset):
@@ -185,13 +185,14 @@ async def test_csv_wrong_datasource_type(introspect_toolset: IntrospectToolset):
         await introspect_toolset.introspect_csv("test_db")
 
 
-async def test_get_tools_returns_five(introspect_toolset: IntrospectToolset):
-    """get_tools returns exactly 5 tools."""
+async def test_get_tools_returns_six(introspect_toolset: IntrospectToolset):
+    """get_tools returns exactly 6 tools."""
     tools = await introspect_toolset.get_tools()
-    assert len(tools) == 5
+    assert len(tools) == 6
     names = {t.name for t in tools}
     assert names == {
         "introspect_sql",
+        "introspect_sql_schema",
         "introspect_csv",
         "introspect_json",
         "introspect_mongodb",
@@ -256,11 +257,11 @@ async def test_json_introspect_type_inference(json_toolset: IntrospectToolset):
     """JSON introspection infers types from values."""
     result = await json_toolset.introspect_json("test_json")
     col_map = {c["name"]: c for c in result["columns"]}
-    assert col_map["test_id"]["inferred_type"] == "integer"
-    assert col_map["patient_email"]["inferred_type"] == "email"
-    assert col_map["collected_date"]["inferred_type"] == "date"
-    assert col_map["collected_time"]["inferred_type"] == "time"
-    assert col_map["request_uuid"]["inferred_type"] == "UUID"
+    assert col_map["test_id"]["data_type"] == "integer"
+    assert col_map["patient_email"]["data_type"] == "email"
+    assert col_map["collected_date"]["data_type"] == "date"
+    assert col_map["collected_time"]["data_type"] == "time"
+    assert col_map["request_uuid"]["data_type"] == "UUID"
 
 
 async def test_json_introspect_without_jsonpath(json_toolset: IntrospectToolset):
@@ -325,7 +326,7 @@ async def test_json_nested_objects(tmp_path: Path):
     toolset = IntrospectToolset(config=config)
     result = await toolset.introspect_json("nested")
     col_map = {c["name"]: c for c in result["columns"]}
-    assert col_map["address"]["inferred_type"] == "object"
+    assert col_map["address"]["data_type"] == "object"
 
 
 async def test_json_arrays(tmp_path: Path):
@@ -352,7 +353,7 @@ async def test_json_arrays(tmp_path: Path):
     toolset = IntrospectToolset(config=config)
     result = await toolset.introspect_json("arrays")
     col_map = {c["name"]: c for c in result["columns"]}
-    assert col_map["scores"]["inferred_type"] == "array"
+    assert col_map["scores"]["data_type"] == "array"
 
 
 # --- MongoDB introspection tests ---
@@ -492,8 +493,535 @@ async def test_bigquery_introspection(tmp_path: Path):
     assert result["row_count"] == 42
 
     col_map = {c["name"]: c for c in result["columns"]}
-    assert col_map["id"]["inferred_type"] == "integer"
-    assert col_map["name"]["inferred_type"] == "string"
-    assert col_map["score"]["inferred_type"] == "decimal"
+    assert col_map["id"]["data_type"] == "integer"
+    assert col_map["name"]["data_type"] == "string"
+    assert col_map["score"]["data_type"] == "decimal"
     assert col_map["id"]["sample_values"] == ["1"]
     assert col_map["name"]["sample_values"] == ["Alice"]
+
+
+# --- Column output normalization tests ---
+
+
+async def test_csv_column_output_uses_data_type(introspect_toolset: IntrospectToolset):
+    """CSV introspection uses 'data_type' field name (not 'inferred_type')."""
+    result = await introspect_toolset.introspect_csv("test_csv")
+    for col in result["columns"]:
+        assert "data_type" in col, f"Column {col['name']} missing 'data_type'"
+        assert "inferred_type" not in col, f"Column {col['name']} has legacy 'inferred_type'"
+
+
+async def test_csv_column_output_has_metadata_fields(introspect_toolset: IntrospectToolset):
+    """CSV introspection includes metadata fields with defaults."""
+    result = await introspect_toolset.introspect_csv("test_csv")
+    for col in result["columns"]:
+        assert "description" in col
+        assert "enumeration" in col
+        assert "units" in col
+        assert "nullable" in col
+        assert "constraints" in col
+
+
+async def test_csv_metadata_merge(tmp_path: Path):
+    """CSV with sidecar metadata populates description, enumeration, units."""
+    import json as json_mod
+
+    csv_file = tmp_path / "data.csv"
+    csv_file.write_text("BPXSY1,RIDAGEYR\n120,45\n118,32\n")
+
+    meta_file = tmp_path / "data.meta.json"
+    meta_file.write_text(
+        json_mod.dumps(
+            {
+                "source_format": "xpt",
+                "columns": {
+                    "BPXSY1": {
+                        "description": "Systolic: Blood pres (1st rdg) mm Hg",
+                        "value_labels": {"1": "Acceptable", "2": "Questionable"},
+                        "units": "mmHg",
+                    },
+                    "RIDAGEYR": {
+                        "label": "Age in years at screening",
+                    },
+                },
+            }
+        )
+    )
+
+    config = SDCAgentsConfig(
+        cache={"root": str(tmp_path / ".sdc-cache")},
+        audit={"path": str(tmp_path / "audit.jsonl")},
+        datasources={
+            "nhanes_bp": {
+                "type": "csv",
+                "path": str(csv_file),
+                "metadata_path": str(meta_file),
+            },
+        },
+    )
+    toolset = IntrospectToolset(config=config)
+    result = await toolset.introspect_csv("nhanes_bp")
+
+    col_map = {c["name"]: c for c in result["columns"]}
+    assert col_map["BPXSY1"]["description"] == "Systolic: Blood pres (1st rdg) mm Hg"
+    assert col_map["BPXSY1"]["enumeration"] == {"1": "Acceptable", "2": "Questionable"}
+    assert col_map["BPXSY1"]["units"] == "mmHg"
+    # RIDAGEYR uses "label" key as fallback
+    assert col_map["RIDAGEYR"]["description"] == "Age in years at screening"
+
+
+async def test_csv_metadata_missing_file(tmp_path: Path):
+    """Missing metadata file is silently ignored."""
+    csv_file = tmp_path / "data.csv"
+    csv_file.write_text("col_a,col_b\n1,2\n")
+
+    config = SDCAgentsConfig(
+        cache={"root": str(tmp_path / ".sdc-cache")},
+        audit={"path": str(tmp_path / "audit.jsonl")},
+        datasources={
+            "test_ds": {
+                "type": "csv",
+                "path": str(csv_file),
+                "metadata_path": str(tmp_path / "nonexistent.json"),
+            },
+        },
+    )
+    toolset = IntrospectToolset(config=config)
+    result = await toolset.introspect_csv("test_ds")
+    # Should succeed without error
+    assert len(result["columns"]) == 2
+    assert result["columns"][0]["description"] == ""
+
+
+async def test_json_column_output_uses_data_type(json_toolset: IntrospectToolset):
+    """JSON introspection uses 'data_type' field name (not 'inferred_type')."""
+    result = await json_toolset.introspect_json("test_json")
+    for col in result["columns"]:
+        assert "data_type" in col, f"Column {col['name']} missing 'data_type'"
+        assert "inferred_type" not in col
+
+
+# --- _make_column tests ---
+
+
+_ALL_13_FIELDS = {
+    "name",
+    "data_type",
+    "sample_values",
+    "description",
+    "enumeration",
+    "units",
+    "nullable",
+    "constraints",
+    "range_values",
+    "relationships",
+    "business_rules",
+    "examples",
+    "metadata",
+}
+
+
+def test_make_column_defaults():
+    """_make_column produces all 13 fields with correct defaults."""
+    col = _make_column(name="test", data_type="string")
+    assert set(col.keys()) == _ALL_13_FIELDS
+    assert col["name"] == "test"
+    assert col["data_type"] == "string"
+    assert col["sample_values"] == []
+    assert col["description"] == ""
+    assert col["enumeration"] is None
+    assert col["units"] == ""
+    assert col["nullable"] is None
+    assert col["constraints"] == {}
+    assert col["range_values"] == ""
+    assert col["relationships"] == ""
+    assert col["business_rules"] == ""
+    assert col["examples"] == ""
+    assert col["metadata"] == {}
+
+
+def test_make_column_with_values():
+    """_make_column accepts all keyword arguments."""
+    col = _make_column(
+        name="age",
+        data_type="integer",
+        sample_values=[25, 30],
+        description="Patient age",
+        nullable=False,
+        constraints={"min": 0},
+        range_values="0-150",
+        relationships="patients.id",
+        business_rules="must be positive",
+        examples="25, 30, 45",
+        metadata={"sql_type": "INTEGER"},
+    )
+    assert col["description"] == "Patient age"
+    assert col["range_values"] == "0-150"
+    assert col["relationships"] == "patients.id"
+    assert col["business_rules"] == "must be positive"
+    assert col["examples"] == "25, 30, 45"
+    assert col["metadata"] == {"sql_type": "INTEGER"}
+
+
+# --- Column output 13-field tests ---
+
+
+async def test_csv_column_output_has_all_13_fields(introspect_toolset: IntrospectToolset):
+    """CSV introspection columns have all 13 standardized fields."""
+    result = await introspect_toolset.introspect_csv("test_csv")
+    for col in result["columns"]:
+        assert set(col.keys()) == _ALL_13_FIELDS, f"Column {col['name']} missing fields"
+
+
+async def test_json_column_output_has_all_13_fields(json_toolset: IntrospectToolset):
+    """JSON introspection columns have all 13 standardized fields."""
+    result = await json_toolset.introspect_json("test_json")
+    for col in result["columns"]:
+        assert set(col.keys()) == _ALL_13_FIELDS, f"Column {col['name']} missing fields"
+
+
+# --- SQL schema introspection tests ---
+
+
+async def test_sql_schema_introspect(tmp_path: Path):
+    """SQL schema introspection extracts types, NOT NULL, FK, CHECK."""
+    import sqlalchemy
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    db_path = tmp_path / "schema_test.db"
+    conn_str = f"sqlite+aiosqlite:///{db_path}"
+
+    engine = create_async_engine(conn_str)
+    async with engine.begin() as conn:
+        await conn.execute(
+            sqlalchemy.text(
+                "CREATE TABLE departments ("
+                "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                "  name TEXT NOT NULL"
+                ")"
+            )
+        )
+        await conn.execute(
+            sqlalchemy.text(
+                "CREATE TABLE employees ("
+                "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                "  name TEXT NOT NULL,"
+                "  dept_id INTEGER REFERENCES departments(id),"
+                "  salary REAL CHECK(salary > 0)"
+                ")"
+            )
+        )
+    await engine.dispose()
+
+    config = SDCAgentsConfig(
+        cache={"root": str(tmp_path / ".sdc-cache")},
+        audit={"path": str(tmp_path / "audit.jsonl"), "log_level": "verbose"},
+        datasources={
+            "test_db": {"type": "sql", "connection_string": conn_str},
+        },
+    )
+    toolset = IntrospectToolset(config=config)
+    result = await toolset.introspect_sql_schema("test_db", table_name="employees")
+
+    assert result["datasource"] == "test_db"
+    assert result["type"] == "sql"
+    assert len(result["tables"]) == 1
+    assert result["tables"][0]["table"] == "employees"
+
+    col_map = {c["name"]: c for c in result["tables"][0]["columns"]}
+    # id is primary key
+    assert col_map["id"]["constraints"].get("primary_key") is True
+    assert col_map["id"]["data_type"] == "integer"
+    # name is NOT NULL
+    assert col_map["name"]["nullable"] is False
+    # dept_id has FK relationship
+    assert "departments.id" in col_map["dept_id"]["relationships"]
+    # salary has CHECK constraint
+    assert col_map["salary"]["data_type"] == "decimal"
+    # All columns have 13 fields
+    for col in result["tables"][0]["columns"]:
+        assert set(col.keys()) == _ALL_13_FIELDS
+
+
+async def test_sql_schema_all_tables(tmp_path: Path):
+    """SQL schema introspection without table_name returns all tables."""
+    import sqlalchemy
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    db_path = tmp_path / "multi_table.db"
+    conn_str = f"sqlite+aiosqlite:///{db_path}"
+
+    engine = create_async_engine(conn_str)
+    async with engine.begin() as conn:
+        await conn.execute(sqlalchemy.text("CREATE TABLE alpha (id INTEGER PRIMARY KEY)"))
+        await conn.execute(sqlalchemy.text("CREATE TABLE beta (id INTEGER PRIMARY KEY, val TEXT)"))
+    await engine.dispose()
+
+    config = SDCAgentsConfig(
+        cache={"root": str(tmp_path / ".sdc-cache")},
+        audit={"path": str(tmp_path / "audit.jsonl")},
+        datasources={
+            "test_db": {"type": "sql", "connection_string": conn_str},
+        },
+    )
+    toolset = IntrospectToolset(config=config)
+    result = await toolset.introspect_sql_schema("test_db")
+
+    table_names = {t["table"] for t in result["tables"]}
+    assert "alpha" in table_names
+    assert "beta" in table_names
+
+
+async def test_sql_schema_wrong_type(tmp_path: Path):
+    """Using a CSV datasource for SQL schema raises ValueError."""
+    csv_file = tmp_path / "data.csv"
+    csv_file.write_text("a,b\n1,2\n")
+    config = SDCAgentsConfig(
+        cache={"root": str(tmp_path / ".sdc-cache")},
+        audit={"path": str(tmp_path / "audit.jsonl")},
+        datasources={
+            "csv_ds": {"type": "csv", "path": str(csv_file)},
+        },
+    )
+    toolset = IntrospectToolset(config=config)
+    with pytest.raises(ValueError, match="not 'sql'"):
+        await toolset.introspect_sql_schema("csv_ds")
+
+
+# --- BigQuery native metadata tests ---
+
+
+async def test_bigquery_native_metadata(tmp_path: Path):
+    """BigQuery introspection extracts description, mode, and nested fields."""
+    from unittest.mock import MagicMock, patch
+
+    config = SDCAgentsConfig(
+        cache={"root": str(tmp_path / ".sdc-cache")},
+        audit={"path": str(tmp_path / "audit.jsonl"), "log_level": "verbose"},
+        datasources={
+            "test_bq": {
+                "type": "bigquery",
+                "project": "my-project",
+                "dataset": "ds",
+            },
+        },
+    )
+    toolset = IntrospectToolset(config=config)
+
+    # Mock fields with description and mode
+    mock_field_id = MagicMock()
+    mock_field_id.name = "id"
+    mock_field_id.field_type = "INT64"
+    mock_field_id.description = "Primary identifier"
+    mock_field_id.mode = "REQUIRED"
+    mock_field_id.fields = []
+
+    mock_field_addr = MagicMock()
+    mock_field_addr.name = "address"
+    mock_field_addr.field_type = "STRUCT"
+    mock_field_addr.description = "Mailing address"
+    mock_field_addr.mode = "NULLABLE"
+    # Nested fields
+    mock_sub_city = MagicMock()
+    mock_sub_city.name = "city"
+    mock_sub_zip = MagicMock()
+    mock_sub_zip.name = "zip"
+    mock_field_addr.fields = [mock_sub_city, mock_sub_zip]
+
+    mock_table = MagicMock()
+    mock_table.schema = [mock_field_id, mock_field_addr]
+    mock_table.num_rows = 10
+
+    mock_client = MagicMock()
+    mock_client.get_table.return_value = mock_table
+    mock_client.list_rows.return_value = []
+
+    with patch("google.cloud.bigquery.Client", return_value=mock_client):
+        result = await toolset.introspect_bigquery("test_bq", table="users")
+
+    col_map = {c["name"]: c for c in result["columns"]}
+
+    # id: description and nullable from mode
+    assert col_map["id"]["description"] == "Primary identifier"
+    assert col_map["id"]["nullable"] is False
+    assert col_map["id"]["metadata"]["bigquery_type"] == "INT64"
+    assert col_map["id"]["metadata"]["bigquery_mode"] == "REQUIRED"
+
+    # address: STRUCT with nested fields
+    assert col_map["address"]["description"] == "Mailing address"
+    assert col_map["address"]["nullable"] is True
+    assert "city" in col_map["address"]["relationships"]
+    assert "zip" in col_map["address"]["relationships"]
+    assert col_map["address"]["data_type"] == "object"
+
+
+# --- MongoDB validator extraction tests ---
+
+
+async def test_mongodb_validator_extraction(tmp_path: Path):
+    """MongoDB introspection extracts metadata from JSON Schema validator."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    config = SDCAgentsConfig(
+        cache={"root": str(tmp_path / ".sdc-cache")},
+        audit={"path": str(tmp_path / "audit.jsonl"), "log_level": "verbose"},
+        datasources={
+            "test_mongo": {
+                "type": "mongodb",
+                "connection_string": "mongodb://localhost:27017",
+                "database": "testdb",
+                "collection": "patients",
+            },
+        },
+    )
+    toolset = IntrospectToolset(config=config)
+
+    # Mock validator schema
+    validator_response = {
+        "cursor": {
+            "firstBatch": [
+                {
+                    "name": "patients",
+                    "options": {
+                        "validator": {
+                            "$jsonSchema": {
+                                "required": ["name", "age"],
+                                "properties": {
+                                    "name": {
+                                        "bsonType": "string",
+                                        "description": "Patient full name",
+                                    },
+                                    "age": {
+                                        "bsonType": "int",
+                                        "description": "Age in years",
+                                        "minimum": 0,
+                                        "maximum": 150,
+                                    },
+                                    "status": {
+                                        "bsonType": "string",
+                                        "enum": ["active", "inactive", "deceased"],
+                                    },
+                                    "code": {
+                                        "bsonType": "string",
+                                        "pattern": "^[A-Z]{3}$",
+                                    },
+                                },
+                            }
+                        }
+                    },
+                }
+            ]
+        }
+    }
+
+    # Sample documents
+    sample_docs = [
+        {"_id": "abc123", "name": "Alice", "age": 30, "status": "active", "code": "ABC"},
+        {"_id": "def456", "name": "Bob", "age": 45, "status": "inactive", "code": "XYZ"},
+    ]
+
+    mock_cursor = MagicMock()
+    mock_cursor.to_list = AsyncMock(return_value=sample_docs)
+
+    mock_find_result = MagicMock()
+    mock_find_result.limit = MagicMock(return_value=mock_cursor)
+
+    mock_coll = MagicMock()
+    mock_coll.find = MagicMock(return_value=mock_find_result)
+    mock_coll.count_documents = AsyncMock(return_value=2)
+
+    mock_db = MagicMock()
+    mock_db.__getitem__ = MagicMock(return_value=mock_coll)
+    mock_db.command = AsyncMock(return_value=validator_response)
+
+    mock_client = MagicMock()
+    mock_client.__getitem__ = MagicMock(return_value=mock_db)
+    mock_client.close = MagicMock()
+
+    with patch("motor.motor_asyncio.AsyncIOMotorClient", return_value=mock_client):
+        result = await toolset.introspect_mongodb("test_mongo")
+
+    field_map = {f["name"]: f for f in result["fields"]}
+
+    # name: description from validator, required → not nullable
+    assert field_map["name"]["description"] == "Patient full name"
+    assert field_map["name"]["nullable"] is False
+
+    # age: min/max constraints and range_values
+    assert field_map["age"]["description"] == "Age in years"
+    assert field_map["age"]["constraints"]["min"] == 0
+    assert field_map["age"]["constraints"]["max"] == 150
+    assert "min=0" in field_map["age"]["range_values"]
+    assert "max=150" in field_map["age"]["range_values"]
+
+    # status: enumeration
+    assert field_map["status"]["enumeration"] is not None
+    assert "active" in field_map["status"]["enumeration"]
+
+    # code: pattern constraint and business_rules
+    assert field_map["code"]["constraints"]["pattern"] == "^[A-Z]{3}$"
+    assert "pattern" in field_map["code"]["business_rules"]
+
+    # All fields have bson_type at top level (backward compat) and in metadata
+    for f in result["fields"]:
+        assert "bson_type" in f
+        assert "bson_type" in f["metadata"]
+
+
+# --- Sidecar new fields tests ---
+
+
+async def test_sidecar_new_fields(tmp_path: Path):
+    """Sidecar metadata with new fields merges correctly."""
+    import json as json_mod
+
+    csv_file = tmp_path / "data.csv"
+    csv_file.write_text("age,dept_id\n30,5\n25,3\n")
+
+    meta_file = tmp_path / "data.meta.json"
+    meta_file.write_text(
+        json_mod.dumps(
+            {
+                "columns": {
+                    "age": {
+                        "description": "Employee age",
+                        "range_values": "18-65",
+                        "business_rules": "Must be at least 18",
+                        "examples": "25, 30, 45",
+                        "metadata": {"source_system": "HR"},
+                    },
+                    "dept_id": {
+                        "description": "Department reference",
+                        "relationships": "departments.id",
+                    },
+                },
+            }
+        )
+    )
+
+    config = SDCAgentsConfig(
+        cache={"root": str(tmp_path / ".sdc-cache")},
+        audit={"path": str(tmp_path / "audit.jsonl")},
+        datasources={
+            "test_ds": {
+                "type": "csv",
+                "path": str(csv_file),
+                "metadata_path": str(meta_file),
+            },
+        },
+    )
+    toolset = IntrospectToolset(config=config)
+    result = await toolset.introspect_csv("test_ds")
+
+    col_map = {c["name"]: c for c in result["columns"]}
+
+    assert col_map["age"]["description"] == "Employee age"
+    assert col_map["age"]["range_values"] == "18-65"
+    assert col_map["age"]["business_rules"] == "Must be at least 18"
+    assert col_map["age"]["examples"] == "25, 30, 45"
+    assert col_map["age"]["metadata"] == {"source_system": "HR"}
+
+    assert col_map["dept_id"]["relationships"] == "departments.id"
+    # Fields not in sidecar keep defaults
+    assert col_map["dept_id"]["range_values"] == ""
+    assert col_map["dept_id"]["business_rules"] == ""

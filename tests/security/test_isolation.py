@@ -67,12 +67,13 @@ async def test_catalog_only_exposes_catalog_tools(security_config):
 
 
 async def test_introspect_only_exposes_introspect_tools(security_config):
-    """Introspect toolset has exactly 5 introspect-scoped tools."""
+    """Introspect toolset has exactly 6 introspect-scoped tools."""
     toolset = IntrospectToolset(config=security_config)
     tools = await toolset.get_tools()
     names = {t.name for t in tools}
     assert names == {
         "introspect_sql",
+        "introspect_sql_schema",
         "introspect_csv",
         "introspect_json",
         "introspect_mongodb",
@@ -322,7 +323,7 @@ async def test_no_tool_name_overlap():
     assert len(all_toolsets["catalog"]) == 6
     assert len(all_toolsets["distribution"]) == 5
     assert len(all_toolsets["generator"]) == 3
-    assert len(all_toolsets["introspect"]) == 5
+    assert len(all_toolsets["introspect"]) == 6
     assert len(all_toolsets["knowledge"]) == 3
     assert len(all_toolsets["mapping"]) == 3
     assert len(all_toolsets["semantic_discovery"]) == 1
