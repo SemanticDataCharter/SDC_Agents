@@ -159,9 +159,7 @@ class AssemblyToolset(BaseToolset):
                 comp_label = comp.get("label", "")
                 name_score = self._name_similarity(col_name, comp_label)
                 desc_score = (
-                    self._name_similarity(col_description, comp_label)
-                    if col_description
-                    else 0.0
+                    self._name_similarity(col_description, comp_label) if col_description else 0.0
                 )
                 score = max(name_score, desc_score)
 
