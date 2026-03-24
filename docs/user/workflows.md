@@ -8,7 +8,7 @@ Step-by-step guides for the most common SDC Agents operations.
 
 Transform a CSV file into validated, signed SDC4 XML instances with artifact packages.
 
-**Prerequisites:** A published SDC4 schema in SDCStudio, a CSV datasource configured in `sdc-agents.yaml`.
+**Prerequisites:** A published SDC4 schema in SDCStudio, a CSV datasource configured in `sdc-agents.yaml`. The authenticated user must have a **Default Project** set in SDCStudio (**Settings > Preferences**) — the assembly API creates all new components and data models in this project.
 
 ### Step 1: Discover the target schema
 

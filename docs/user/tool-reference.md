@@ -689,6 +689,8 @@ Select contextual components (audit, attestation, party) from the default librar
 
 Assemble a data model by calling the SDCStudio Assembly API. Fail-closed: the entire request is rejected if any referenced component is invalid.
 
+**Important**: New components and data models are created in the authenticated user's **Default Project**, configured in SDCStudio at **Settings > Preferences**. The project is resolved server-side from the Modeler profile — it is not sent in the API request. If no default project is set, assembly will return an error.
+
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `title` | str | Yes | — | Title for the new data model |
