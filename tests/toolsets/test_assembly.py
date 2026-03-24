@@ -168,7 +168,8 @@ async def test_discover_components(assembly_config, assembly_client, tmp_path):
 
     assert result["datasource"] == "lab_results"
     assert len(result["matches"]) >= 2  # At least test_name and test_date should match
-    assert "internal_id" in result["unmatched"]  # integer won't match any schema component
+    unmatched_names = [u["name"] for u in result["unmatched"]]
+    assert "internal_id" in unmatched_names  # integer won't match any schema component
 
     # Verify match structure
     for match in result["matches"]:
@@ -426,8 +427,8 @@ async def test_assemble_model_402(assembly_config):
             assembly_tree=assembly_tree,
         )
 
-    assert exc_info.value.estimated_cost == "0.30"
-    assert exc_info.value.balance_remaining == "0.05"
+    assert exc_info.value.estimated_cost == 0.30
+    assert exc_info.value.balance_remaining == 0.05
 
 
 async def test_assemble_model_402_without_headers(assembly_config):
@@ -464,8 +465,8 @@ async def test_assemble_model_402_without_headers(assembly_config):
         )
 
     # Without X-SDC-* headers, falls back to body fields
-    assert exc_info.value.estimated_cost == "0.50"
-    assert exc_info.value.balance_remaining == "0.10"
+    assert exc_info.value.estimated_cost == 0.50
+    assert exc_info.value.balance_remaining == 0.10
 
 
 # --- HTTP 202 Async Assembly ---
@@ -496,7 +497,7 @@ async def test_assemble_model_async_202(assembly_config):
     assert result["status"] == "processing"
     assert result["task_id"] == "celery-task-abc123"
     assert result["data_source_ct_id"] == "clds00assembly01"
-    assert result["estimated_cost"] == "0.20"
+    assert result["estimated_cost"] == 0.20
     assert result["new_components"] == 2
 
 

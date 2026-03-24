@@ -256,8 +256,8 @@ async def test_validate_instance_402(validation_config: SDCAgentsConfig, sample_
     with pytest.raises(InsufficientFundsError) as exc_info:
         await toolset.validate_instance(xml_path=str(sample_xml_file))
 
-    assert exc_info.value.estimated_cost == "0.001"
-    assert exc_info.value.balance_remaining == "0.0000"
+    assert exc_info.value.estimated_cost == 0.001
+    assert exc_info.value.balance_remaining == 0.0
 
 
 async def test_sign_instance_402(validation_config: SDCAgentsConfig, sample_xml_file: Path):
@@ -269,8 +269,8 @@ async def test_sign_instance_402(validation_config: SDCAgentsConfig, sample_xml_
     with pytest.raises(InsufficientFundsError) as exc_info:
         await toolset.sign_instance(xml_path=str(sample_xml_file))
 
-    assert exc_info.value.estimated_cost == "0.001"
-    assert exc_info.value.balance_remaining == "0.0000"
+    assert exc_info.value.estimated_cost == 0.001
+    assert exc_info.value.balance_remaining == 0.0
 
 
 async def test_validate_batch_halts_on_402(
@@ -311,8 +311,8 @@ async def test_validate_batch_halts_on_402(
     assert result["halt_reason"] == "insufficient_funds"
     assert result["count"] == 1  # Only first file was processed
     assert len(result["pending_files"]) == 2  # Second and third remain
-    assert result["wallet"]["estimated_cost"] == "0.001"
-    assert result["wallet"]["balance_remaining"] == "0.0000"
+    assert result["wallet"]["estimated_cost"] == 0.001
+    assert result["wallet"]["balance_remaining"] == 0.0
     assert "resume_hint" in result
 
 
@@ -337,5 +337,5 @@ async def test_validate_batch_wallet_headers_surfaced(
     toolset = ValidationToolset(config=validation_config, http_client=client)
 
     result = await toolset.validate_instance(xml_path=str(sample_xml_file))
-    assert result["estimated_cost"] == "0.001"
-    assert result["balance_remaining"] == "49.999"
+    assert result["estimated_cost"] == 0.001
+    assert result["balance_remaining"] == 49.999

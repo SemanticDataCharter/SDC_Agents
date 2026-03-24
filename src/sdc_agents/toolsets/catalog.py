@@ -213,6 +213,10 @@ class CatalogToolset(BaseToolset):
         resp.raise_for_status()
         result = resp.json()
 
+        # Normalize numeric fields — Django DecimalField serializes to strings
+        if "balance" in result:
+            result["balance"] = float(result["balance"])
+
         self._audit.log(
             agent="catalog",
             tool="catalog_check_wallet",

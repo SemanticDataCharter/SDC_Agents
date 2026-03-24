@@ -116,9 +116,9 @@ class ValidationToolset(BaseToolset):
         est = resp.headers.get("X-SDC-Estimated-Cost")
         bal = resp.headers.get("X-SDC-Balance-Remaining")
         if est:
-            info["estimated_cost"] = est
+            info["estimated_cost"] = float(est)
         if bal:
-            info["balance_remaining"] = bal
+            info["balance_remaining"] = float(bal)
         return info
 
     async def validate_instance(
