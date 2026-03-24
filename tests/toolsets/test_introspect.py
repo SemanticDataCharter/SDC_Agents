@@ -941,7 +941,7 @@ async def test_mongodb_validator_extraction(tmp_path: Path):
     with patch("motor.motor_asyncio.AsyncIOMotorClient", return_value=mock_client):
         result = await toolset.introspect_mongodb("test_mongo")
 
-    field_map = {f["name"]: f for f in result["fields"]}
+    field_map = {f["name"]: f for f in result["columns"]}
 
     # name: description from validator, required → not nullable
     assert field_map["name"]["description"] == "Patient full name"
@@ -963,7 +963,7 @@ async def test_mongodb_validator_extraction(tmp_path: Path):
     assert "pattern" in field_map["code"]["business_rules"]
 
     # All fields have bson_type at top level (backward compat) and in metadata
-    for f in result["fields"]:
+    for f in result["columns"]:
         assert "bson_type" in f
         assert "bson_type" in f["metadata"]
 

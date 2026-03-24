@@ -93,9 +93,9 @@ class AssemblyToolset(BaseToolset):
         est = resp.headers.get("X-SDC-Estimated-Cost")
         bal = resp.headers.get("X-SDC-Balance-Remaining")
         if est:
-            info["estimated_cost"] = est
+            info["estimated_cost"] = float(est)
         if bal:
-            info["balance_remaining"] = bal
+            info["balance_remaining"] = float(bal)
         return info
 
     def _name_similarity(self, name_a: str, name_b: str) -> float:
@@ -180,7 +180,15 @@ class AssemblyToolset(BaseToolset):
                 matched_columns.add(col_name)
 
         unmatched = [
-            col.get("name", "") for col in columns if col.get("name", "") not in matched_columns
+            {
+                "name": col.get("name", ""),
+                "data_type": col.get("data_type") or col.get("inferred_type", "string"),
+                "description": col.get("description", ""),
+                "units": col.get("units", ""),
+                "enumeration": col.get("enumeration"),
+            }
+            for col in columns
+            if col.get("name", "") not in matched_columns
         ]
 
         result = {
@@ -462,12 +470,13 @@ class AssemblyToolset(BaseToolset):
 
         if resp.status_code == 202:
             # Async path — components are being minted via agentic pipeline
+            raw_cost = data.get("estimated_cost", 0)
             result = {
                 "mode": "async",
                 "status": data.get("status", "processing"),
                 "task_id": data.get("task_id", ""),
                 "data_source_ct_id": data.get("data_source_ct_id", ""),
-                "estimated_cost": data.get("estimated_cost", ""),
+                "estimated_cost": float(raw_cost) if raw_cost else 0.0,
                 "new_components": data.get("new_components", 0),
                 **self._extract_wallet_headers(resp),
             }

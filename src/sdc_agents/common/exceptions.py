@@ -10,9 +10,9 @@ class InsufficientFundsError(Exception):
         self,
         message: str = "Insufficient wallet balance.",
         *,
-        estimated_cost: str = "",
-        balance_remaining: str = "",
+        estimated_cost: float | str = "",
+        balance_remaining: float | str = "",
     ):
-        self.estimated_cost = estimated_cost
-        self.balance_remaining = balance_remaining
+        self.estimated_cost = float(estimated_cost) if estimated_cost != "" else 0.0
+        self.balance_remaining = float(balance_remaining) if balance_remaining != "" else 0.0
         super().__init__(message)

@@ -165,7 +165,7 @@ async def test_catalog_check_wallet(tmp_path: Path):
 
     result = await toolset.catalog_check_wallet()
 
-    assert result["balance"] == "25.00"
+    assert result["balance"] == 25.0
     assert result["auto_reload_enabled"] is True
     assert result["auto_reload_threshold"] == "5.00"
     assert result["auto_reload_amount"] == "25.00"

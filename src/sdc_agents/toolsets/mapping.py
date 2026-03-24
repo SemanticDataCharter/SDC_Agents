@@ -107,6 +107,7 @@ class MappingToolset(BaseToolset):
             similarity = _name_similarity(column_name, component.get("label", ""))
             suggestions.append(
                 {
+                    "column_name": column_name,
                     "component_ct_id": component["ct_id"],
                     "component_label": component.get("label", ""),
                     "component_type": comp_type,
@@ -133,6 +134,8 @@ class MappingToolset(BaseToolset):
         self,
         mapping_name: str,
         mappings: list[dict],
+        schema_ct_id: str = "",
+        datasource: str = "",
     ) -> dict:
         """Confirm and persist a set of column-to-component mappings.
 
@@ -143,6 +146,8 @@ class MappingToolset(BaseToolset):
             mapping_name: Name for this mapping configuration.
             mappings: List of dicts, each with 'column_name', 'component_ct_id',
                 and 'component_type'.
+            schema_ct_id: ct_id of the target schema for this mapping.
+            datasource: Name of the datasource being mapped.
 
         Returns:
             Confirmation dict with mapping_name, count, and cache path.
@@ -157,6 +162,8 @@ class MappingToolset(BaseToolset):
 
         mapping_config = {
             "name": mapping_name,
+            "schema_ct_id": schema_ct_id,
+            "datasource": datasource,
             "mappings": mappings,
         }
         cache_path = self._cache.mapping_path(mapping_name)

@@ -424,6 +424,10 @@ class IntrospectToolset(BaseToolset):
             "row_count": row_count,
         }
 
+        # Write to introspection cache for downstream toolsets
+        cache_path = self._cache.introspection_path(datasource_name)
+        cache_path.write_text(json.dumps(result, indent=2, default=str))
+
         self._audit.log(
             agent="introspect",
             tool="introspect_csv",
@@ -546,6 +550,10 @@ class IntrospectToolset(BaseToolset):
             "columns": columns,
             "row_count": row_count,
         }
+
+        # Write to introspection cache for downstream toolsets
+        cache_path = self._cache.introspection_path(datasource_name)
+        cache_path.write_text(json.dumps(result, indent=2, default=str))
 
         self._audit.log(
             agent="introspect",
@@ -713,9 +721,13 @@ class IntrospectToolset(BaseToolset):
         result = {
             "datasource": datasource_name,
             "collection": coll_name,
-            "fields": fields,
-            "document_count": doc_count,
+            "columns": fields,
+            "row_count": doc_count,
         }
+
+        # Write to introspection cache for downstream toolsets
+        cache_path = self._cache.introspection_path(datasource_name)
+        cache_path.write_text(json.dumps(result, indent=2, default=str))
 
         self._audit.log(
             agent="introspect",
@@ -842,16 +854,28 @@ class IntrospectToolset(BaseToolset):
                                 "row_count": full_table.num_rows,
                             }
                         )
+                    # Flatten all table columns into top-level columns list
+                    all_columns = []
+                    for tbl_info in table_list:
+                        for col in tbl_info["columns"]:
+                            col["metadata"]["source_table"] = tbl_info["table"]
+                            all_columns.append(col)
                     return {
                         "datasource": datasource_name,
                         "type": "bigquery",
                         "dataset": ds_name,
+                        "columns": all_columns,
+                        "row_count": sum(t.get("row_count", 0) or 0 for t in table_list),
                         "tables": table_list,
                     }
             finally:
                 client.close()
 
         result = await asyncio.to_thread(_run_sync)
+
+        # Write to introspection cache for downstream toolsets
+        cache_path = self._cache.introspection_path(datasource_name)
+        cache_path.write_text(json.dumps(result, indent=2, default=str))
 
         self._audit.log(
             agent="introspect",
@@ -989,11 +1013,24 @@ class IntrospectToolset(BaseToolset):
         finally:
             await engine.dispose()
 
+        # Flatten all table columns into top-level columns list
+        all_columns = []
+        for tbl_info in tables:
+            for col in tbl_info["columns"]:
+                col["metadata"]["source_table"] = tbl_info["table"]
+                all_columns.append(col)
+
         result = {
             "datasource": datasource_name,
             "type": "sql",
+            "columns": all_columns,
+            "row_count": 0,
             "tables": tables,
         }
+
+        # Write to introspection cache for downstream toolsets
+        cache_path = self._cache.introspection_path(datasource_name)
+        cache_path.write_text(json.dumps(result, indent=2, default=str))
 
         self._audit.log(
             agent="introspect",
