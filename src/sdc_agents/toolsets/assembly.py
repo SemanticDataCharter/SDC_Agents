@@ -370,9 +370,7 @@ class AssemblyToolset(BaseToolset):
                             continue
 
                     # Step B: Search all public+published components
-                    public_results = await self._catalog_search(
-                        keyword, catalog_cache
-                    )
+                    public_results = await self._catalog_search(keyword, catalog_cache)
                     best_pub = None
                     best_pub_score = 0.0
                     for comp in public_results:

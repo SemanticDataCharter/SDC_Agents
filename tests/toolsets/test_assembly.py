@@ -705,17 +705,17 @@ def _make_catalog_transport(
         if "/api/v1/dmgen/components/" in url and request.method == "GET":
             parsed = urlparse(url)
             params = parse_qs(parsed.query)
-            call_log.append({
-                "search": params.get("search", [None])[0],
-                "project": params.get("project", [None])[0],
-            })
+            call_log.append(
+                {
+                    "search": params.get("search", [None])[0],
+                    "project": params.get("project", [None])[0],
+                }
+            )
             if params.get("project"):
                 return httpx.Response(
                     200, json=make_catalog_search_response(project_results or [])
                 )
-            return httpx.Response(
-                200, json=make_catalog_search_response(public_results or [])
-            )
+            return httpx.Response(200, json=make_catalog_search_response(public_results or []))
         if "/api/v1/catalog/components/" in url and request.method == "GET":
             return httpx.Response(200, json={"count": 0, "results": []})
 
@@ -919,9 +919,7 @@ async def test_catalog_search_disabled(assembly_config, tmp_path):
     }
     (intro_dir / "ds_disabled.json").write_text(json.dumps(introspection))
 
-    result = await toolset.discover_components(
-        "ds_disabled", search_catalog=False
-    )
+    result = await toolset.discover_components("ds_disabled", search_catalog=False)
 
     # No catalog API calls should have been made
     assert len(call_log) == 0
