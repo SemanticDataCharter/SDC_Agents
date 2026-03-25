@@ -1,3 +1,3 @@
 """SDC Agents: Purpose-scoped ADK agents for SDC4 data operations."""
 
-__version__ = "4.3.1"
+__version__ = "4.3.2"
