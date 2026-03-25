@@ -57,6 +57,11 @@ def _make_transport(assembly_config):
             return httpx.Response(200, json=make_catalog_search_response())
         if "/api/v1/dmgen/assemble/" in url and request.method == "POST":
             return httpx.Response(200, json=make_assembly_api_response())
+        if "/api/v1/auth/modeler/" in url and request.method == "GET":
+            return httpx.Response(
+                200,
+                json={"project_ct_id": "clproj_default", "name": "Test Modeler"},
+            )
 
         return httpx.Response(404, json={"error": "not found"})
 
@@ -690,18 +695,25 @@ async def test_mint_ref_carries_metadata(assembly_config, assembly_client):
 def _make_catalog_transport(
     project_results: list[dict] | None = None,
     public_results: list[dict] | None = None,
+    modeler_project: str | None = "clproj_modeler_default",
 ):
     """Create a MockTransport that returns catalog search results.
 
     Args:
         project_results: Results when ``project=`` param is present.
         public_results: Results when no ``project=`` param.
+        modeler_project: project_ct_id returned by the Modeler API.
     """
     call_log: list[dict] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         url = str(request.url)
 
+        if "/api/v1/auth/modeler/" in url and request.method == "GET":
+            return httpx.Response(
+                200,
+                json={"project_ct_id": modeler_project, "name": "Test Modeler"},
+            )
         if "/api/v1/dmgen/components/" in url and request.method == "GET":
             parsed = urlparse(url)
             params = parse_qs(parsed.query)
@@ -996,3 +1008,74 @@ async def test_catalog_search_falls_through_to_schema(assembly_config, tmp_path)
     assert len(result["matches"]) == 1
     assert result["matches"][0]["ct_id"] == "clxdstr001"
     assert "source" not in result["matches"][0]  # Schema matches don't have source
+
+
+# --- Modeler default project auto-fetch ---
+
+
+async def test_get_modeler_project(assembly_config, assembly_client):
+    """_get_modeler_project fetches and caches the Modeler's default project."""
+    toolset = AssemblyToolset(config=assembly_config, http_client=assembly_client)
+
+    project = await toolset._get_modeler_project()
+    assert project == "clproj_default"
+
+    # Second call returns cached value (no extra API call)
+    project2 = await toolset._get_modeler_project()
+    assert project2 == "clproj_default"
+
+
+async def test_get_modeler_project_none(assembly_config):
+    """_get_modeler_project returns None when Modeler has no default project."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "/api/v1/auth/modeler/" in url:
+            return httpx.Response(200, json={"project_ct_id": None, "name": "Test Modeler"})
+        return httpx.Response(404)
+
+    transport = httpx.MockTransport(handler)
+    client = httpx.AsyncClient(transport=transport, base_url="https://test.local")
+    toolset = AssemblyToolset(config=assembly_config, http_client=client)
+
+    project = await toolset._get_modeler_project()
+    assert project is None
+
+
+async def test_discover_auto_fetches_modeler_project(assembly_config, tmp_path):
+    """discover_components auto-fetches Modeler project when project_ct_id not passed."""
+    public_results = [
+        {
+            "ct_id": "clxdtkn_diab",
+            "label": "diabetes-status",
+            "type": "xdtoken",
+            "description": "Ever told you had diabetes",
+            "project_name": "NIH_CDE",
+        },
+    ]
+    transport, call_log = _make_catalog_transport(
+        project_results=[], public_results=public_results
+    )
+    client = httpx.AsyncClient(transport=transport, base_url="https://test.local")
+    toolset = AssemblyToolset(config=assembly_config, http_client=client)
+
+    intro_dir = tmp_path / ".sdc-cache" / "introspections"
+    intro_dir.mkdir(parents=True, exist_ok=True)
+    introspection = {
+        "columns": [
+            {
+                "name": "DIABETE4",
+                "data_type": "decimal",
+                "description": "Ever told you had diabetes",
+            },
+        ]
+    }
+    (intro_dir / "nhanes_auto.json").write_text(json.dumps(introspection))
+
+    # No project_ct_id passed — should auto-fetch from Modeler API
+    await toolset.discover_components("nhanes_auto")
+
+    # Should have searched Modeler's project first
+    project_calls = [c for c in call_log if c["project"] is not None]
+    assert len(project_calls) >= 1
+    assert project_calls[0]["project"] == "clproj_modeler_default"

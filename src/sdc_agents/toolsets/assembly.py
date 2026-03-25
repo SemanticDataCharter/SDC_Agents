@@ -99,6 +99,7 @@ class AssemblyToolset(BaseToolset):
         self._cache = CacheManager(config.cache.root)
         self._cache.ensure_dirs()
         self._audit = AuditLogger(config.audit.path, config.audit.log_level)
+        self._modeler_project: Optional[str] = None  # Lazy-fetched
 
         # Set up HTTP client with Token auth (consistent with VaaS)
         if http_client:
@@ -257,6 +258,27 @@ class AssemblyToolset(BaseToolset):
         await asyncio.sleep(0.2)
         return results
 
+    async def _get_modeler_project(self) -> Optional[str]:
+        """Fetch the Modeler's default project ct_id from the SDCStudio API.
+
+        Result is cached for the lifetime of this toolset instance.
+
+        Returns:
+            The project ct_id string, or None if not set or unreachable.
+        """
+        if self._modeler_project is not None:
+            return self._modeler_project
+
+        try:
+            resp = await self._http.get("/api/v1/auth/modeler/")
+            resp.raise_for_status()
+            data = resp.json()
+            self._modeler_project = data.get("project_ct_id") or None
+        except (httpx.HTTPStatusError, httpx.RequestError):
+            self._modeler_project = None
+
+        return self._modeler_project
+
     async def discover_components(
         self,
         datasource_name: str,
@@ -280,14 +302,19 @@ class AssemblyToolset(BaseToolset):
                 before schema-tree matching. Set to False for backward
                 compatibility or testing.
             project_ct_id: Optional project ct_id to scope catalog search.
-                When set, the user's own project is searched first (higher
-                contextual relevance), then public components as fallback.
+                When None (default), automatically fetches the Modeler's
+                default project from the SDCStudio API. Pass an explicit
+                ct_id to override, or set search_catalog=False to skip.
 
         Returns:
             Dict with datasource, matches list, unmatched columns, and
             catalog_matches count.
         """
         start_time = time.monotonic()
+
+        # Resolve project ct_id: explicit > Modeler API > None
+        if search_catalog and project_ct_id is None:
+            project_ct_id = await self._get_modeler_project()
 
         # Load introspection result from cache
         intro_path = self._cache.introspection_path(datasource_name)
