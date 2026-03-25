@@ -161,7 +161,12 @@ class AssemblyToolset(BaseToolset):
 
     @staticmethod
     def _extract_search_keywords(col_name: str, col_description: str) -> list[str]:
-        """Extract 1-2 meaningful search keywords from column metadata.
+        """Extract meaningful search keywords from column metadata.
+
+        Produces multiple query strings ordered by expected precision:
+        1. Full description phrase (up to 4 meaningful words)
+        2. Individual distinctive words from the description (len >= 5)
+        3. Expanded coded column name
 
         Args:
             col_name: Column name (may be coded, e.g. ``DIABETE4``).
@@ -173,15 +178,23 @@ class AssemblyToolset(BaseToolset):
         queries: list[str] = []
 
         if col_description:
+            # Strip parenthetical units/notes and punctuation
+            cleaned_desc = re.sub(r"\([^)]*\)", "", col_description)
+            cleaned_desc = re.sub(r"[^a-zA-Z0-9\s]", " ", cleaned_desc)
             words = [
                 w
-                for w in re.split(r"[\s_\-/]+", col_description.lower())
+                for w in cleaned_desc.lower().split()
                 if w and w not in _STOP_WORDS and len(w) > 2
             ]
+
+            # Full phrase (up to 4 words) — best for precise matches
             if len(words) >= 2:
-                queries.append(" ".join(words[:2]))
-            elif words:
-                queries.append(words[0])
+                queries.append(" ".join(words[:4]))
+
+            # Individual distinctive words (len >= 5) — broader search
+            for w in words:
+                if len(w) >= 5 and w not in queries:
+                    queries.append(w)
 
         # Expand coded column names: strip trailing digits, split on underscores
         cleaned = re.sub(r"\d+$", "", col_name)
