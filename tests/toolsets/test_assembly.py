@@ -705,9 +705,10 @@ def _make_catalog_transport(
         if "/api/v1/dmgen/components/" in url and request.method == "GET":
             parsed = urlparse(url)
             params = parse_qs(parsed.query)
-            call_log.append(
-                {"search": params.get("search", [None])[0], "project": params.get("project", [None])[0]}
-            )
+            call_log.append({
+                "search": params.get("search", [None])[0],
+                "project": params.get("project", [None])[0],
+            })
             if params.get("project"):
                 return httpx.Response(
                     200, json=make_catalog_search_response(project_results or [])
