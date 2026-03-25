@@ -13,7 +13,9 @@ Wallet-aware: raises ``InsufficientFundsError`` on HTTP 402.
 
 from __future__ import annotations
 
+import asyncio
 import json
+import re
 import time
 from difflib import SequenceMatcher
 from typing import Optional
@@ -28,9 +30,61 @@ from sdc_agents.common.config import SDCAgentsConfig
 from sdc_agents.common.exceptions import InsufficientFundsError
 from sdc_agents.toolsets.mapping import TYPE_COMPATIBILITY
 
+# Stop words filtered from search keyword extraction
+_STOP_WORDS = frozenset(
+    {
+        "a",
+        "an",
+        "the",
+        "in",
+        "of",
+        "at",
+        "to",
+        "for",
+        "is",
+        "on",
+        "by",
+        "and",
+        "or",
+        "was",
+        "not",
+        "with",
+        "from",
+        "are",
+        "has",
+        "had",
+        "been",
+        "were",
+        "this",
+        "that",
+        "ever",
+        "told",
+        "you",
+        "your",
+        "its",
+        "any",
+    }
+)
+
 
 class AssemblyToolset(BaseToolset):
     """Toolset for component discovery and data model assembly."""
+
+    _TYPE_NORMALIZE: dict[str, str] = {
+        "xdstring": "XdString",
+        "xdtoken": "XdToken",
+        "xdcount": "XdCount",
+        "xdquantity": "XdQuantity",
+        "xdboolean": "XdBoolean",
+        "xdtemporal": "XdTemporal",
+        "xdfloat": "XdFloat",
+        "xddouble": "XdDouble",
+        "xdordinal": "XdOrdinal",
+        "xdlink": "XdLink",
+        "xdfile": "XdFile",
+        "cluster": "Cluster",
+        "units": "Units",
+    }
 
     def __init__(
         self,
@@ -104,18 +158,134 @@ class AssemblyToolset(BaseToolset):
         b = name_b.lower().replace("_", " ").replace("-", " ")
         return SequenceMatcher(None, a, b).ratio()
 
+    @staticmethod
+    def _extract_search_keywords(col_name: str, col_description: str) -> list[str]:
+        """Extract 1-2 meaningful search keywords from column metadata.
+
+        Args:
+            col_name: Column name (may be coded, e.g. ``DIABETE4``).
+            col_description: Human-readable description (may be empty).
+
+        Returns:
+            List of query strings ordered by expected precision.
+        """
+        queries: list[str] = []
+
+        if col_description:
+            words = [
+                w
+                for w in re.split(r"[\s_\-/]+", col_description.lower())
+                if w and w not in _STOP_WORDS and len(w) > 2
+            ]
+            if len(words) >= 2:
+                queries.append(" ".join(words[:2]))
+            elif words:
+                queries.append(words[0])
+
+        # Expand coded column names: strip trailing digits, split on underscores
+        cleaned = re.sub(r"\d+$", "", col_name)
+        parts = [
+            p.lower()
+            for p in re.split(r"[_\-]+", cleaned)
+            if p and p.lower() not in _STOP_WORDS and len(p) > 2
+        ]
+        if parts:
+            name_query = " ".join(parts[:2])
+            if name_query not in queries:
+                queries.append(name_query)
+
+        return queries
+
+    async def _catalog_search(
+        self,
+        query: str,
+        cache: dict[str, list[dict]],
+        project: Optional[str] = None,
+    ) -> list[dict]:
+        """Search the authenticated component list endpoint.
+
+        Args:
+            query: Search keyword(s).
+            cache: Shared cache dict keyed by ``(query, project)`` to avoid
+                redundant API calls.
+            project: Optional project ct_id to scope the search.
+
+        Returns:
+            List of ``{ct_id, label, type, description, project_name}`` dicts.
+        """
+        cache_key = f"{query}|{project or ''}"
+        if cache_key in cache:
+            return cache[cache_key]
+
+        params: dict[str, str | int] = {
+            "status": "published",
+            "search": query,
+            "page_size": 10,
+        }
+        if project:
+            params["project"] = project
+
+        try:
+            resp = await self._http.get(
+                "/api/v1/dmgen/components/",
+                params=params,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        except (httpx.HTTPStatusError, httpx.RequestError):
+            cache[cache_key] = []
+            return []
+
+        results_raw = data.get("results", data) if isinstance(data, dict) else data
+        results: list[dict] = []
+        for comp in results_raw:
+            raw_type = comp.get("type", comp.get("component_type", ""))
+            normalized = self._TYPE_NORMALIZE.get(raw_type.lower(), raw_type)
+            results.append(
+                {
+                    "ct_id": comp.get("ct_id", ""),
+                    "label": comp.get("label", ""),
+                    "type": normalized,
+                    "description": comp.get("description", ""),
+                    "project_name": comp.get("project_name", ""),
+                }
+            )
+
+        cache[cache_key] = results
+
+        # Rate limiting: brief sleep after uncached API call
+        await asyncio.sleep(0.2)
+        return results
+
     async def discover_components(
-        self, datasource_name: str, schema_ct_id: Optional[str] = None
+        self,
+        datasource_name: str,
+        schema_ct_id: Optional[str] = None,
+        *,
+        search_catalog: bool = True,
+        project_ct_id: Optional[str] = None,
     ) -> dict:
         """Discover catalog components matching a datasource's structure.
+
+        Uses a catalog-first strategy: searches the published component catalog
+        by semantic keywords before falling back to schema-tree matching by type.
+        This maximizes reuse and avoids type-inference errors (e.g. SAS doubles
+        misclassified as XdQuantity when they should be XdToken/XdOrdinal).
 
         Args:
             datasource_name: Name of a previously introspected datasource.
             schema_ct_id: Optional schema ct_id to match against. If None,
                 matches against all cached schema components.
+            search_catalog: If True (default), search the published catalog
+                before schema-tree matching. Set to False for backward
+                compatibility or testing.
+            project_ct_id: Optional project ct_id to scope catalog search.
+                When set, the user's own project is searched first (higher
+                contextual relevance), then public components as fallback.
 
         Returns:
-            Dict with datasource, matches list, and unmatched columns.
+            Dict with datasource, matches list, unmatched columns, and
+            catalog_matches count.
         """
         start_time = time.monotonic()
 
@@ -141,11 +311,106 @@ class AssemblyToolset(BaseToolset):
         columns = introspection.get("columns", [])
         matches = []
         matched_columns = set()
+        catalog_match_count = 0
+        catalog_cache: dict[str, list[dict]] = {}
 
         for col in columns:
             col_name = col.get("name", "")
             col_type = col.get("data_type") or col.get("inferred_type", "string")
             col_description = col.get("description", "")
+
+            # --- Phase 1: Catalog search (no type filter) ---
+            catalog_matched = False
+            if search_catalog:
+                keywords = self._extract_search_keywords(col_name, col_description)
+                for keyword in keywords:
+                    if catalog_matched:
+                        break
+
+                    # Step A: Search current project first
+                    if project_ct_id:
+                        project_results = await self._catalog_search(
+                            keyword, catalog_cache, project=project_ct_id
+                        )
+                        best_cat = None
+                        best_cat_score = 0.0
+                        for comp in project_results:
+                            comp_label = comp.get("label", "")
+                            comp_desc = comp.get("description", "")
+                            ns = self._name_similarity(col_name, comp_label)
+                            ds = (
+                                self._name_similarity(col_description, comp_label)
+                                if col_description
+                                else 0.0
+                            )
+                            dd = (
+                                self._name_similarity(col_description, comp_desc)
+                                if col_description and comp_desc
+                                else 0.0
+                            )
+                            score = max(ns, ds, dd)
+                            if score > best_cat_score:
+                                best_cat_score = score
+                                best_cat = comp
+
+                        if best_cat and best_cat_score > 0.5:
+                            matches.append(
+                                {
+                                    "column": col_name,
+                                    "ct_id": best_cat["ct_id"],
+                                    "label": best_cat["label"],
+                                    "type": best_cat["type"],
+                                    "score": round(best_cat_score, 4),
+                                    "source": "catalog_project",
+                                }
+                            )
+                            matched_columns.add(col_name)
+                            catalog_match_count += 1
+                            catalog_matched = True
+                            continue
+
+                    # Step B: Search all public+published components
+                    public_results = await self._catalog_search(keyword, catalog_cache)
+                    best_pub = None
+                    best_pub_score = 0.0
+                    for comp in public_results:
+                        comp_label = comp.get("label", "")
+                        comp_desc = comp.get("description", "")
+                        ns = self._name_similarity(col_name, comp_label)
+                        ds = (
+                            self._name_similarity(col_description, comp_label)
+                            if col_description
+                            else 0.0
+                        )
+                        dd = (
+                            self._name_similarity(col_description, comp_desc)
+                            if col_description and comp_desc
+                            else 0.0
+                        )
+                        score = max(ns, ds, dd)
+                        if score > best_pub_score:
+                            best_pub_score = score
+                            best_pub = comp
+
+                    if best_pub and best_pub_score > 0.5:
+                        matches.append(
+                            {
+                                "column": col_name,
+                                "ct_id": best_pub["ct_id"],
+                                "label": best_pub["label"],
+                                "type": best_pub["type"],
+                                "score": round(best_pub_score, 4),
+                                "source": "catalog_public",
+                            }
+                        )
+                        matched_columns.add(col_name)
+                        catalog_match_count += 1
+                        catalog_matched = True
+
+            if catalog_matched:
+                continue
+
+            # --- Phase 2: Schema-tree matching (with type filter, threshold 0.3) ---
             compatible_types = TYPE_COMPATIBILITY.get(col_type, {"XdString"})
 
             best_match = None
@@ -195,13 +460,23 @@ class AssemblyToolset(BaseToolset):
             "datasource": datasource_name,
             "matches": matches,
             "unmatched": unmatched,
+            "catalog_matches": catalog_match_count,
         }
 
         self._audit.log(
             agent="assembly",
             tool="discover_components",
-            inputs={"datasource_name": datasource_name, "schema_ct_id": schema_ct_id},
-            outputs={"match_count": len(matches), "unmatched_count": len(unmatched)},
+            inputs={
+                "datasource_name": datasource_name,
+                "schema_ct_id": schema_ct_id,
+                "search_catalog": search_catalog,
+                "project_ct_id": project_ct_id,
+            },
+            outputs={
+                "match_count": len(matches),
+                "unmatched_count": len(unmatched),
+                "catalog_matches": catalog_match_count,
+            },
             start_time=start_time,
         )
         return result

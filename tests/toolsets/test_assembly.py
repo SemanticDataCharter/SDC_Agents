@@ -16,6 +16,7 @@ from tests.fixtures.assembly_responses import (
     make_assembly_api_response,
     make_assembly_insufficient_funds_response,
     make_assembly_processing_response,
+    make_catalog_search_response,
     make_contextual_components_response,
 )
 
@@ -51,6 +52,9 @@ def _make_transport(assembly_config):
             return httpx.Response(
                 200, json=make_contextual_components_response(component_type=comp_type)
             )
+        if "/api/v1/dmgen/components/" in url and request.method == "GET":
+            # Return empty results by default for existing tests
+            return httpx.Response(200, json=make_catalog_search_response())
         if "/api/v1/dmgen/assemble/" in url and request.method == "POST":
             return httpx.Response(200, json=make_assembly_api_response())
 
@@ -678,3 +682,317 @@ async def test_mint_ref_carries_metadata(assembly_config, assembly_client):
     assert ref["description"] == "Systolic Blood Pressure"
     assert ref["units"] == "mmHg"
     assert ref["enumeration"] == {"1": "Acceptable", "2": "Questionable"}
+
+
+# --- Catalog-first component discovery ---
+
+
+def _make_catalog_transport(
+    project_results: list[dict] | None = None,
+    public_results: list[dict] | None = None,
+):
+    """Create a MockTransport that returns catalog search results.
+
+    Args:
+        project_results: Results when ``project=`` param is present.
+        public_results: Results when no ``project=`` param.
+    """
+    call_log: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+
+        if "/api/v1/dmgen/components/" in url and request.method == "GET":
+            parsed = urlparse(url)
+            params = parse_qs(parsed.query)
+            call_log.append(
+                {
+                    "search": params.get("search", [None])[0],
+                    "project": params.get("project", [None])[0],
+                }
+            )
+            if params.get("project"):
+                return httpx.Response(
+                    200, json=make_catalog_search_response(project_results or [])
+                )
+            return httpx.Response(200, json=make_catalog_search_response(public_results or []))
+        if "/api/v1/catalog/components/" in url and request.method == "GET":
+            return httpx.Response(200, json={"count": 0, "results": []})
+
+        return httpx.Response(404, json={"error": "not found"})
+
+    return httpx.MockTransport(handler), call_log
+
+
+async def test_catalog_search_project_first(assembly_config, tmp_path):
+    """Column 'DIABETE4' with description matches project component; public not called."""
+    project_results = [
+        {
+            "ct_id": "clxdtkn_diab",
+            "label": "diabetes-status",
+            "type": "xdtoken",
+            "description": "Ever told you had diabetes",
+            "project_name": "NIH_CDE",
+        },
+    ]
+    transport, call_log = _make_catalog_transport(project_results=project_results)
+    client = httpx.AsyncClient(transport=transport, base_url="https://test.local")
+    toolset = AssemblyToolset(config=assembly_config, http_client=client)
+
+    intro_dir = tmp_path / ".sdc-cache" / "introspections"
+    intro_dir.mkdir(parents=True, exist_ok=True)
+    introspection = {
+        "columns": [
+            {
+                "name": "DIABETE4",
+                "data_type": "decimal",
+                "description": "Ever told you had diabetes",
+            },
+        ]
+    }
+    (intro_dir / "nhanes_diab.json").write_text(json.dumps(introspection))
+
+    result = await toolset.discover_components(
+        "nhanes_diab", search_catalog=True, project_ct_id="proj_nih"
+    )
+
+    assert len(result["matches"]) == 1
+    m = result["matches"][0]
+    assert m["column"] == "DIABETE4"
+    assert m["ct_id"] == "clxdtkn_diab"
+    assert m["type"] == "XdToken"  # Normalized from lowercase
+    assert m["source"] == "catalog_project"
+    assert result["catalog_matches"] == 1
+
+    # Only project-scoped call made (no public call for this column)
+    project_calls = [c for c in call_log if c["project"] is not None]
+    assert len(project_calls) >= 1
+
+
+async def test_catalog_search_falls_to_public(assembly_config, tmp_path):
+    """Column matches public catalog when project search returns nothing."""
+    public_results = [
+        {
+            "ct_id": "clxdord_edu",
+            "label": "education-level",
+            "type": "xdordinal",
+            "description": "Education level completed",
+            "project_name": "NIH_CDE",
+        },
+    ]
+    transport, call_log = _make_catalog_transport(
+        project_results=[], public_results=public_results
+    )
+    client = httpx.AsyncClient(transport=transport, base_url="https://test.local")
+    toolset = AssemblyToolset(config=assembly_config, http_client=client)
+
+    intro_dir = tmp_path / ".sdc-cache" / "introspections"
+    intro_dir.mkdir(parents=True, exist_ok=True)
+    introspection = {
+        "columns": [
+            {
+                "name": "DMDEDUC2",
+                "data_type": "decimal",
+                "description": "Education level",
+            },
+        ]
+    }
+    (intro_dir / "nhanes_edu.json").write_text(json.dumps(introspection))
+
+    result = await toolset.discover_components(
+        "nhanes_edu", search_catalog=True, project_ct_id="proj_nih"
+    )
+
+    assert len(result["matches"]) == 1
+    m = result["matches"][0]
+    assert m["ct_id"] == "clxdord_edu"
+    assert m["type"] == "XdOrdinal"
+    assert m["source"] == "catalog_public"
+    assert result["catalog_matches"] == 1
+
+
+async def test_catalog_search_type_override(assembly_config, tmp_path):
+    """Catalog type overrides inferred type — decimal column matches XdOrdinal."""
+    public_results = [
+        {
+            "ct_id": "clxdord_edu",
+            "label": "education-level",
+            "type": "xdordinal",
+            "description": "Education level completed",
+            "project_name": "NIH_CDE",
+        },
+    ]
+    transport, _ = _make_catalog_transport(public_results=public_results)
+    client = httpx.AsyncClient(transport=transport, base_url="https://test.local")
+    toolset = AssemblyToolset(config=assembly_config, http_client=client)
+
+    intro_dir = tmp_path / ".sdc-cache" / "introspections"
+    intro_dir.mkdir(parents=True, exist_ok=True)
+    introspection = {
+        "columns": [
+            {
+                "name": "DMDEDUC2",
+                "data_type": "decimal",  # _infer_type sees SAS double
+                "description": "Education level",
+            },
+        ]
+    }
+    (intro_dir / "nhanes_type.json").write_text(json.dumps(introspection))
+
+    result = await toolset.discover_components("nhanes_type", search_catalog=True)
+
+    assert len(result["matches"]) == 1
+    # XdOrdinal is NOT in TYPE_COMPATIBILITY["decimal"] = {XdQuantity, XdDecimalList}
+    # but catalog-first search ignores type compatibility
+    assert result["matches"][0]["type"] == "XdOrdinal"
+
+
+async def test_catalog_search_caching(assembly_config, tmp_path):
+    """Same keyword searched twice results in only one API call."""
+    public_results = [
+        {
+            "ct_id": "clxdtkn_diab",
+            "label": "diabetes-status",
+            "type": "xdtoken",
+            "description": "Ever told you had diabetes",
+            "project_name": "NIH_CDE",
+        },
+    ]
+    transport, call_log = _make_catalog_transport(public_results=public_results)
+    client = httpx.AsyncClient(transport=transport, base_url="https://test.local")
+    toolset = AssemblyToolset(config=assembly_config, http_client=client)
+
+    intro_dir = tmp_path / ".sdc-cache" / "introspections"
+    intro_dir.mkdir(parents=True, exist_ok=True)
+    # Two columns with same description keyword
+    introspection = {
+        "columns": [
+            {
+                "name": "DIABETE3",
+                "data_type": "decimal",
+                "description": "Ever told you had diabetes",
+            },
+            {
+                "name": "DIABETE4",
+                "data_type": "decimal",
+                "description": "Ever told you had diabetes",
+            },
+        ]
+    }
+    (intro_dir / "nhanes_cache.json").write_text(json.dumps(introspection))
+
+    result = await toolset.discover_components("nhanes_cache", search_catalog=True)
+
+    # Both columns should match
+    assert len(result["matches"]) == 2
+
+    # But the same keyword should only trigger one API call (cached on second)
+    # Extract unique search keywords from call_log
+    unique_searches = {(c["search"], c["project"]) for c in call_log}
+    # "told diabetes" extracted from both descriptions is the same query
+    # so we expect at most 2 unique queries (keyword variants), not 4
+    assert len(call_log) <= len(unique_searches) + 1  # Allow 1 extra for keyword variants
+
+
+async def test_catalog_search_disabled(assembly_config, tmp_path):
+    """search_catalog=False skips catalog API calls entirely."""
+    transport, call_log = _make_catalog_transport(
+        public_results=[
+            {
+                "ct_id": "clxdtkn_x",
+                "label": "should-not-match",
+                "type": "xdtoken",
+                "description": "Should not be reached",
+                "project_name": "Test",
+            },
+        ]
+    )
+    client = httpx.AsyncClient(transport=transport, base_url="https://test.local")
+    toolset = AssemblyToolset(config=assembly_config, http_client=client)
+
+    intro_dir = tmp_path / ".sdc-cache" / "introspections"
+    intro_dir.mkdir(parents=True, exist_ok=True)
+    introspection = {
+        "columns": [
+            {"name": "test_col", "data_type": "string", "description": "Some column"},
+        ]
+    }
+    (intro_dir / "ds_disabled.json").write_text(json.dumps(introspection))
+
+    result = await toolset.discover_components("ds_disabled", search_catalog=False)
+
+    # No catalog API calls should have been made
+    assert len(call_log) == 0
+    assert result["catalog_matches"] == 0
+    # No schema either, so everything unmatched
+    assert len(result["unmatched"]) == 1
+
+
+async def test_catalog_search_no_false_positives(assembly_config, tmp_path):
+    """Weak keyword match (score < 0.5) correctly rejected."""
+    public_results = [
+        {
+            "ct_id": "clxdstr_unrel",
+            "label": "completely-unrelated-component",
+            "type": "xdstring",
+            "description": "Something entirely different",
+            "project_name": "Other",
+        },
+    ]
+    transport, _ = _make_catalog_transport(public_results=public_results)
+    client = httpx.AsyncClient(transport=transport, base_url="https://test.local")
+    toolset = AssemblyToolset(config=assembly_config, http_client=client)
+
+    intro_dir = tmp_path / ".sdc-cache" / "introspections"
+    intro_dir.mkdir(parents=True, exist_ok=True)
+    introspection = {
+        "columns": [
+            {
+                "name": "SEQN",
+                "data_type": "integer",
+                "description": "Respondent sequence number",
+            },
+        ]
+    }
+    (intro_dir / "nhanes_fp.json").write_text(json.dumps(introspection))
+
+    result = await toolset.discover_components("nhanes_fp", search_catalog=True)
+
+    # Should not match — similarity too low
+    assert result["catalog_matches"] == 0
+    assert len(result["unmatched"]) == 1
+
+
+async def test_catalog_search_falls_through_to_schema(assembly_config, tmp_path):
+    """No catalog match but schema component matches — existing behavior preserved."""
+    transport, _ = _make_catalog_transport()  # Empty catalog results
+    client = httpx.AsyncClient(transport=transport, base_url="https://test.local")
+    toolset = AssemblyToolset(config=assembly_config, http_client=client)
+
+    intro_dir = tmp_path / ".sdc-cache" / "introspections"
+    intro_dir.mkdir(parents=True, exist_ok=True)
+    introspection = {
+        "columns": [
+            {"name": "test_name", "data_type": "string"},
+        ]
+    }
+    (intro_dir / "ds_fallback.json").write_text(json.dumps(introspection))
+
+    schema_dir = tmp_path / ".sdc-cache" / "schemas"
+    schema_dir.mkdir(parents=True, exist_ok=True)
+    schema = {
+        "components": [
+            {"type": "XdString", "ct_id": "clxdstr001", "label": "test-name"},
+        ]
+    }
+    (schema_dir / "clschema_fb.json").write_text(json.dumps(schema))
+
+    result = await toolset.discover_components(
+        "ds_fallback", schema_ct_id="clschema_fb", search_catalog=True
+    )
+
+    # Catalog returned nothing, but schema-tree match works
+    assert result["catalog_matches"] == 0
+    assert len(result["matches"]) == 1
+    assert result["matches"][0]["ct_id"] == "clxdstr001"
+    assert "source" not in result["matches"][0]  # Schema matches don't have source

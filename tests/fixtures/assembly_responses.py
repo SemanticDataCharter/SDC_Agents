@@ -141,6 +141,20 @@ def make_assembly_insufficient_funds_response(
     }
 
 
+def make_catalog_search_response(
+    results: list[dict] | None = None,
+) -> dict:
+    """Sample GET /api/v1/dmgen/components/?status=published&search=... response."""
+    if results is None:
+        results = []
+    return {
+        "count": len(results),
+        "page": 1,
+        "page_size": 10,
+        "results": results,
+    }
+
+
 def make_discover_components_result(
     datasource: str = "lab_results",
 ) -> dict:
