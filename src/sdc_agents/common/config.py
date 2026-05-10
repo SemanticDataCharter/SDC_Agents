@@ -44,7 +44,7 @@ def _walk_and_substitute(obj: object) -> object:
 class SDCStudioConfig(BaseModel):
     """SDCStudio API connection settings."""
 
-    base_url: str = "https://sdcstudio.example.com"
+    base_url: str = "https://sdcstudio.axius-sdc.com"
     api_key: Optional[str] = None  # VaaS token (Validation Agent only)
     toolbox_url: Optional[str] = None  # MCP Toolbox server URL (optional)
     default_library_project: Optional[str] = None  # Default project for contextual components
