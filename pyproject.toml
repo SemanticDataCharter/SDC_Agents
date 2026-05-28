@@ -27,7 +27,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "google-adk>=1.25",
+    "google-adk>=1.28.1",  # Security: CVE-2026-4810 CRITICAL (code injection + missing auth)
     "click>=8",
     "pydantic>=2",
     "pyyaml>=6",
