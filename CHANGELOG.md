@@ -14,6 +14,21 @@ aligned with SDC Generation 4.
 
 ---
 
+## [4.4.0] - 2026-05-28
+
+### Security
+- **`google-adk` floor bumped from `>=1.25` to `>=1.28.1`** — formally requires the fix for [CVE-2026-4810](https://github.com/advisories/GHSA-rg7c-g689-fr3x) (Code Injection + Missing Authentication, severity CRITICAL). Vulnerable range was `>=1.7.0, <1.28.1`. No lock file in this repo so fresh installs already resolved to the latest google-adk; this change makes the security floor explicit so future installs cannot land on a vulnerable version. Pinning `sdc-agents>=4.4.0` downstream guarantees the patched substrate.
+
+### Fixed
+- CI install now uses `[dev,bigquery]` (was `[dev]`) so the `mock.patch("google.cloud.bigquery.Client", ...)` target resolves in `test_bigquery_introspection` and `test_bigquery_native_metadata`. The `bigquery` extra has always existed in `pyproject.toml`; CI just needed to consume it.
+- `IntrospectToolset.introspect_bigquery` lazy import wrapped in `try/except ImportError`, now raises a friendly `RuntimeError` pointing the user to `pip install -e ".[bigquery]"` when the optional dep is missing at runtime.
+- `tests/toolsets/test_semantic_discovery.py::test_get_tools_returns_one` modernized from the legacy `asyncio.get_event_loop().run_until_complete(...)` pattern (which raises `RuntimeError: There is no current event loop in thread 'MainThread'` on Python 3.11+) to `asyncio.run(...)`.
+
+### Style
+- Applied `black` 24.10.0 formatting to `src/sdc_agents/toolsets/introspect.py`.
+
+---
+
 ## [4.1.0] - 2026-03-09
 
 ### Added
