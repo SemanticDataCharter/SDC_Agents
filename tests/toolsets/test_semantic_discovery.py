@@ -35,7 +35,7 @@ def test_get_tools_returns_one():
 
         import asyncio
 
-        tools = asyncio.get_event_loop().run_until_complete(toolset.get_tools())
+        tools = asyncio.run(toolset.get_tools())
         assert len(tools) == 1
 
 
