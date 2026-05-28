@@ -29,6 +29,81 @@ aligned with SDC Generation 4.
 
 ---
 
+## [4.3.3] - 2026-03-25
+
+### Fixed
+- `discover_components` keyword extraction improved for catalog-first discovery: extracts full description phrases (up to 4 words), individual distinctive words (length >= 5), and expanded column names; strips parenthetical units/notes and punctuation before extraction. Fixes poor keyword quality that missed catalog matches for clinical terms like cholesterol, blood pressure, and CBC.
+
+---
+
+## [4.3.2] - 2026-03-25
+
+### Added
+- `discover_components()` auto-fetches the Modeler's default project from `GET /api/v1/auth/modeler/` when `project_ct_id` is not explicitly passed. Result is cached per toolset instance. Consumers no longer need to resolve the project themselves.
+
+---
+
+## [4.3.1] - 2026-03-25
+
+### Added
+- **Catalog-first component discovery** in the assembly pipeline. Searches the published component catalog by semantic keywords before falling back to schema-tree matching by type. Two-tier search: project-scoped first, then public, then schema-tree fallback. Catalog matches accept the catalog's type as authoritative (no `TYPE_COMPATIBILITY` filter). Includes keyword extraction, response caching, rate limiting, and a backward-compatible `search_catalog` toggle. Fixes the 90% type-mismatch rate observed in the FAIR Data Demo where SAS doubles were misclassified as `XdQuantity` instead of `XdToken` / `XdOrdinal`.
+
+### Fixed
+- Line length in `test_assembly.py`.
+
+### Style
+- Applied `black` formatting.
+
+---
+
+## [4.3.0] - 2026-03-24
+
+### Fixed
+- **#24** — All introspection methods now write to cache via `CacheManager`.
+- **#25** — `discover_components()` returns unmatched as `list[dict]` with `name`, `data_type`, `description`, `units`, `enumeration`.
+- **#26** — `mapping_confirm()` accepts and persists `schema_ct_id` and `datasource`.
+- **#27** — All wallet fields normalized to `float` across exceptions, assembly, catalog, and validation toolsets.
+- **#28** — `mapping_suggest()` includes `column_name` in output.
+- **#29** — MongoDB introspection uses the `'columns'` key; SQL schema and BigQuery multi-table results add a flattened top-level `'columns'`.
+
+### Documentation
+- Documented Default Project requirement for the Assembly API (resolved server-side from the Modeler profile, not sent in the API request).
+- Phase 6 status updated to Complete: ADK ecosystem contributions submitted — community resource card to `google/adk-docs`, toolsets module to `google/adk-python-community`.
+
+### Tests
+- 218 tests passing.
+
+---
+
+## [4.2.0] - 2026-03-23
+
+### Added
+- **`_make_column` factory** enforcing a standardized 13-field column dict across all 6 introspection tools.
+- **Native metadata extraction** from BigQuery (`description`, `mode`, nested `STRUCT`), MongoDB (JSON Schema validator), and SQL (catalog introspection via the new `introspect_sql_schema` tool).
+- **Sidecar metadata merge** extended with `range_values`, `relationships`, `business_rules`, `examples`, and `metadata` fields.
+- **Column metadata enhancement for coded datasources** (NHANES, SAS, CDISC, etc.) via a sidecar JSON file pointed to by the new `metadata_path` config field. Enriches coded column names with human-readable labels, descriptions, units, and enumerations.
+- **Description-based matching in `discover_components`** so coded column names can match catalog components via their descriptions, not just their (often opaque) machine names.
+- Metadata pass-through to the Assembly API via mint refs.
+- `description`, `enumeration`, `units`, `nullable`, and `constraints` fields in all introspection outputs.
+- PyPI version badge in the README.
+- SDC Agents key artwork in the README.
+
+### Changed
+- Introspection output normalized to use `data_type` consistently, replacing a silent default-to-`"string"` path that produced bad assembly-discovery matches.
+- LICENSE filled in: Copyright 2025-2026 Axius SDC, Inc.; `maintainers` field added to `pyproject.toml`; License & Ownership section added to README and CONTRIBUTING. Establishes that the SemanticDataCharter org is controlled by Axius SDC, Inc.
+
+### Fixed
+- Silent string default in assembly discovery (now uses the normalized `data_type`).
+- Ruff lint errors in the introspect toolset (unused `sqlalchemy` import, long line in the `pk_constraint` call, test docstring length).
+
+### Style
+- Reformatted `assembly.py` with `black`.
+
+### Note
+- Version `4.1.1` was bumped in `pyproject.toml` on the path to `4.2.0` but not separately tagged. All `4.1.1` work is included in this release.
+
+---
+
 ## [4.1.0] - 2026-03-09
 
 ### Added
