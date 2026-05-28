@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sdc-agents"
-version = "4.3.3"
+version = "4.4.0"
 description = "Purpose-scoped ADK agents for SDC4 data operations"
 readme = "README.md"
 license = "Apache-2.0"
@@ -27,7 +27,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "google-adk>=1.25",
+    "google-adk>=1.28.1",  # Security: CVE-2026-4810 CRITICAL (code injection + missing auth)
     "click>=8",
     "pydantic>=2",
     "pyyaml>=6",

@@ -778,7 +778,13 @@ class IntrospectToolset(BaseToolset):
 
         ds_name = dataset or ds.dataset
 
-        from google.cloud import bigquery
+        try:
+            from google.cloud import bigquery
+        except ImportError as exc:
+            raise RuntimeError(
+                "BigQuery support requires the 'google-cloud-bigquery' package. "
+                'Install with: pip install -e ".[bigquery]"'
+            ) from exc
 
         def _bq_field_to_column(field) -> dict:
             """Convert a BigQuery SchemaField to a standardized column dict."""

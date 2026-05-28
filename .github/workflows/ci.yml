@@ -21,7 +21,10 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        # bigquery extra is required so tests that patch google.cloud.bigquery
+        # have the package present (the import is lazy in src/, but the
+        # mock.patch target needs the module importable).
+        run: pip install -e ".[dev,bigquery]"
 
       - name: Lint with ruff
         run: ruff check src/ tests/
