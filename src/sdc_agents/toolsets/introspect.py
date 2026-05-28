@@ -783,7 +783,7 @@ class IntrospectToolset(BaseToolset):
         except ImportError as exc:
             raise RuntimeError(
                 "BigQuery support requires the 'google-cloud-bigquery' package. "
-                "Install with: pip install -e \".[bigquery]\""
+                'Install with: pip install -e ".[bigquery]"'
             ) from exc
 
         def _bq_field_to_column(field) -> dict:
