@@ -15,6 +15,16 @@ SDC Agents is a suite of runtime Python agents that interact with customer datas
 
 Only the current major version (4.x.x) aligned with SDC Generation 4 receives updates.
 
+### Security-Critical Version Floors
+
+Pin at or above these versions to guarantee a known-CVE-patched dependency surface:
+
+| Pin | Floor | Reason |
+| --- | --- | --- |
+| `sdc-agents` | `>=4.4.0` | Floors `google-adk>=1.28.1` — CVE-2026-4810 (CRITICAL: code injection + missing authentication in google-adk; fixed in 1.28.1). |
+
+Security-conscious and sovereign deployments should pin **`sdc-agents>=4.4.0`**.
+
 ---
 
 ## Security Model
