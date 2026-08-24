@@ -291,6 +291,27 @@ pytest tests/toolsets/test_catalog.py
 pytest tests/security/
 ```
 
+CI runs `ruff check`, then `black --check`, then `pytest`, across Python 3.11,
+3.12 and 3.13. Run the formatters before pushing or the lint step fails on
+whitespace.
+
+### Releasing
+
+**Two steps, and the second one is silent if you forget it.** Merging to `main`
+publishes the Docker image, because `docker.yml` triggers on pushes to `main`.
+It does **not** publish to PyPI. `release.yml` triggers on a **tag**:
+
+```bash
+# after the PR is merged and main carries the new version
+git checkout main && git pull
+git tag -a v4.4.1 -m "4.4.1"   # must match `version` in pyproject.toml
+git push origin v4.4.1
+```
+
+The tag push builds and publishes to PyPI via trusted publishing. A merge with
+no tag looks like a successful release and ships nothing, which is exactly what
+happened with 4.4.1 before this note existed.
+
 ---
 
 ## Documentation
