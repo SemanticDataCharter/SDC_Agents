@@ -1,0 +1,23 @@
+# Conda environment for developing and testing SDC_Agents.
+#
+#   conda env create -f environment.yml
+#   conda activate SDC_Agents
+#   pip install -e ".[dev]"
+#
+# Why this repo needs its own environment: SDC_Agents depends on google-adk,
+# which SDCStudio deliberately REMOVED during the 2026-08 AI-stack
+# modernization because its pin cascade was holding other packages back and
+# blocking Dependabot. So the SDCStudio env cannot run these tests, and
+# borrowing an unrelated env gives a mismatched ADK (170 failures, all
+# environmental). Keep them separate.
+#
+# The pip extras carry the real dependency set; this file only pins the
+# interpreter and the tooling conda is better at.
+name: SDC_Agents
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12          # pyproject requires >=3.11
+  - pip
+  - pip:
+      - -e .[dev]

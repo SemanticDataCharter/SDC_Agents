@@ -136,9 +136,16 @@ class AssemblyToolset(BaseToolset):
                 data.get("balance", data.get("balance_remaining", "")),
             )
             raise InsufficientFundsError(
-                message=data.get("error", data.get("detail", "Insufficient wallet balance.")),
+                message=data.get("error", data.get("detail", "Insufficient credits.")),
                 estimated_cost=est,
                 balance_remaining=bal,
+                # The server's message quotes credits, so carry its credits
+                # fields rather than re-deriving them and risking a mismatch
+                # between the message and the numbers beside it.
+                estimated_cost_credits=data.get("estimated_cost_credits", ""),
+                balance_remaining_credits=data.get(
+                    "balance_credits", data.get("balance_remaining_credits", "")
+                ),
             )
 
     @staticmethod

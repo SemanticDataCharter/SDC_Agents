@@ -91,12 +91,35 @@ See [docs/dev/SDC_AGENTS_PRD.md](docs/dev/SDC_AGENTS_PRD.md) for the full API co
 ### Prerequisites
 
 - Python 3.11+
-- Google ADK 1.25+ (`pip install google-adk`)
+- Google ADK 1.28.1+ (`pip install google-adk`), the floor set by CVE-2026-4810
 
 ### Installation
 
+SDC_Agents needs **its own environment**. It depends on `google-adk`, which
+SDCStudio deliberately removed during the 2026-08 AI-stack modernization
+because its pin cascade was holding other packages back and blocking
+Dependabot. Running these tests in the SDCStudio environment fails on a missing
+ADK; running them in an unrelated environment gives a mismatched ADK and a wall
+of environmental failures.
+
 ```bash
+conda env create -f environment.yml
+conda activate SDC_Agents
 pip install -e ".[dev]"
+```
+
+Or without conda:
+
+```bash
+python3.12 -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+```
+
+The `dev` extra pulls BigQuery, because the BigQuery introspection tests are
+part of the suite.
+
+```bash
+pytest -q          # 228 passed, 2 skipped
 ```
 
 ### Configuration
