@@ -213,9 +213,23 @@ class CatalogToolset(BaseToolset):
         resp.raise_for_status()
         result = resp.json()
 
-        # Normalize numeric fields — Django DecimalField serializes to strings
+        # Normalize numeric fields. Django DecimalField serializes to strings.
         if "balance" in result:
             result["balance"] = float(result["balance"])
+
+        # Credits are the unit the user is quoted everywhere else, and this
+        # result goes to an LLM that will narrate it. A bare 20.0 reads as
+        # "$20" and contradicts SDCStudio, which says 20,000 credits. Prefer
+        # the server's balance_credits; convert only if talking to an older
+        # server that does not send it.
+        if "balance_credits" in result:
+            result["balance_credits"] = int(result["balance_credits"])
+        elif "balance" in result:
+            result["balance_credits"] = int(round(result["balance"] * 1000))
+        result["currency_note"] = (
+            "balance_credits is the unit to quote the user. "
+            "balance is USD and is for accounting only."
+        )
 
         self._audit.log(
             agent="catalog",
