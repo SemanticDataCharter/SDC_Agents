@@ -5,6 +5,7 @@ Both of these were real: __init__.py said 4.3.3 while pyproject and PyPI said
 4.4.0, and `pip install -e ".[dev]"` produced a suite that could not fully pass
 because the BigQuery tests need an extra that dev did not pull.
 """
+
 import importlib.metadata as md
 import tomllib
 from pathlib import Path
@@ -43,9 +44,9 @@ def test_version_is_not_hardcoded_in_init():
 def test_dev_extra_can_run_the_whole_suite():
     """The BigQuery introspection tests are in the suite, so dev must cover them."""
     dev = _pyproject()["project"]["optional-dependencies"]["dev"]
-    assert any("bigquery" in d for d in dev), (
-        'pip install -e ".[dev]" must be able to run every test'
-    )
+    assert any(
+        "bigquery" in d for d in dev
+    ), 'pip install -e ".[dev]" must be able to run every test'
 
 
 def test_bigquery_is_actually_importable():
