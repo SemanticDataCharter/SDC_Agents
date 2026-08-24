@@ -105,18 +105,18 @@ of environmental failures.
 ```bash
 conda env create -f environment.yml
 conda activate SDC_Agents
-pip install -e ".[dev,bigquery]"
+pip install -e ".[dev]"
 ```
 
 Or without conda:
 
 ```bash
 python3.12 -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev,bigquery]"
+pip install -e ".[dev]"
 ```
 
-The `bigquery` extra is needed for the full test run; without it the two
-BigQuery introspection tests fail on a missing `google.cloud`.
+The `dev` extra pulls BigQuery, because the BigQuery introspection tests are
+part of the suite.
 
 ```bash
 pytest -q          # 228 passed, 2 skipped

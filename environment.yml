@@ -2,7 +2,7 @@
 #
 #   conda env create -f environment.yml
 #   conda activate SDC_Agents
-#   pip install -e ".[dev,bigquery]"
+#   pip install -e ".[dev]"
 #
 # Why this repo needs its own environment: SDC_Agents depends on google-adk,
 # which SDCStudio deliberately REMOVED during the 2026-08 AI-stack
@@ -20,4 +20,4 @@ dependencies:
   - python=3.12          # pyproject requires >=3.11
   - pip
   - pip:
-      - -e .[dev,bigquery]
+      - -e .[dev]
