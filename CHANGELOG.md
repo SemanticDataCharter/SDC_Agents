@@ -14,6 +14,64 @@ aligned with SDC Generation 4.
 
 ---
 
+## [4.5.0] - 2026-10-18
+
+### Fixed
+
+- **The Validation toolset was calling endpoints SDCStudio retired.** `validate_instance`,
+  `sign_instance` and `validate_batch` posted to `/api/v1/vaas/validate/` and `/sign/`, which
+  answer 404 since the Verifiable Settlement Layer replaced the validation service. Validation is
+  now **local**: `sdcvalidator` validates against the model's published XSD 1.1 schema, which the
+  toolset resolves from the instance's own `dm-<ct_id>` and fetches once from the public catalog
+  into `schemas/` in the cache (`schema_path` overrides). Free, offline after the first fetch,
+  errors reported in SDC4's two tiers, and `mode='recover'` writes `<name>.recovered.xml`.
+- **`select_contextual_components` left five of nine slots empty.** It asked the catalog for
+  components by slot name, and subject, provider, protocol, workflow and acs are model fields,
+  not component types, so the catalog answered an empty list and the slots were silently skipped.
+  Each slot is asked for by the type its field holds (`CONTEXTUAL_SLOT_TYPES`).
+- **Artifact downloads saved the production storage pointer instead of the artifact.** On the
+  production deployment the catalog artifact routes answer `{"download_url": ...}` (artifacts live
+  in cloud storage) rather than the bytes, so `catalog_download_schema_rdf` returned that JSON.
+  `sdc_agents.common.artifacts.fetch_artifact_bytes` follows the pointer, without the API key.
+- A retired component in an assembly request (SDCStudio answers 409) is reported with the
+  server's reason instead of a bare HTTP error.
+- `sqlalchemy[asyncio]` is the dependency, so `greenlet` comes with it; a bare `pip install
+  sdc-agents` could not introspect SQL.
+
+### Added
+
+- **`settle_instance`** (Validation toolset): settle one exchange on the Verifiable Settlement
+  Layer (`POST /api/v1/vsl/settle`): the record, a target state, the release condition and the
+  parties' key ids; costs 1,000 credits; the signed Settlement Receipt is written beside the
+  record as `<name>.receipt.json`. A 402 is reported in credits and the agent stops; a 422
+  carries the transitions governance would permit.
+- **`catalog_download_schema_xsd`** (Catalog toolset): the published model's XSD, cached where
+  the Validation toolset looks. Catalog has seven tools.
+- Array columns (SQL `ARRAY`, BigQuery `REPEATED`, JSON lists) map to the six list types
+  (`TYPE_COMPATIBILITY["array"]`).
+- `sdcvalidator>=4.5.3` is a dependency.
+
+### Removed
+
+- `sign_instance` and the `package` option: the validation service that produced signed
+  instances and artifact packages no longer exists; a settlement receipt is the signed artifact.
+
+### Changed
+
+- README, the ADK integration guide, the example config and the Validation Agent's instructions
+  describe local validation and settlement; `api_key` is the SDCStudio API key, not a "VaaS token".
+
+## [4.4.1] - 2026-09-24
+
+### Changed
+
+- The version is derived from the installed package metadata (`importlib.metadata`), so
+  `pyproject.toml` is the single source.
+- `[dev]` installs what the whole suite needs.
+- Wallet and 402 responses are surfaced in credits (1,000 per USD), so the agent does not quote
+  dollars.
+- Its own environment, and the two-step release documented in the README.
+
 ## [4.4.0] - 2026-05-28
 
 ### Security

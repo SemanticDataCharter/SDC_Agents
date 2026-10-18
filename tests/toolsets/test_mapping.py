@@ -122,3 +122,7 @@ async def test_get_tools_returns_three(mapping_toolset: MappingToolset):
     assert len(tools) == 3
     names = {t.name for t in tools}
     assert names == {"mapping_suggest", "mapping_confirm", "mapping_list"}
+
+
+def test_array_columns_map_to_the_list_types():
+    assert {"XdStringList", "XdIntegerList"} <= TYPE_COMPATIBILITY["array"]

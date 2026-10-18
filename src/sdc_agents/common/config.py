@@ -45,7 +45,7 @@ class SDCStudioConfig(BaseModel):
     """SDCStudio API connection settings."""
 
     base_url: str = "https://sdcstudio.axius-sdc.com"
-    api_key: Optional[str] = None  # VaaS token (Validation Agent only)
+    api_key: Optional[str] = None  # SDCStudio API key (settlement, assembly, wallet)
     toolbox_url: Optional[str] = None  # MCP Toolbox server URL (optional)
     default_library_project: Optional[str] = None  # Default project for contextual components
 

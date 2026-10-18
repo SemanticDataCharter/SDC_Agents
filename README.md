@@ -30,7 +30,7 @@ Each agent is an ADK `LlmAgent` with a narrowly scoped `BaseToolset`, auditable 
 | **Introspect Agent** | Examine customer datasources and extract structure (read-only) | None | Read-only |
 | **Mapping Agent** | Suggest and manage column-to-component mappings | None | None |
 | **Generator Agent** | Produce SDC4 XML instances from mapped data | None | Read-only |
-| **Validation Agent** | Validate and sign XML instances via VaaS API | HTTPS (token auth) | None |
+| **Validation Agent** | Validate XML instances locally against their published schemas; settle an exchange on the Verifiable Settlement Layer for a signed receipt | HTTPS (public catalog for schemas; token auth for settlement) | None |
 | **Distribution Agent** | Route artifact packages to customer-local destinations | Customer-local only | None |
 | **Knowledge Agent** | Ingest customer context (CSV, JSON, TTL, Markdown, PDF, DOCX) into vector store | None | Read-only (files) |
 | **Assembly Agent** | Discover components, propose hierarchies, assemble published models | HTTPS (Assembly API) | None |
@@ -78,7 +78,7 @@ Introspect Agent → .sdc-cache/introspections/ ─┤
 SDC Agents consumes two sets of endpoints from [SDCStudio](https://github.com/Axius-SDC/SDCStudio):
 
 - **Catalog API** (public, optional token auth) — schema discovery, component trees, skeleton templates, schema-level RDF, reference ontologies
-- **VaaS API** (token auth) — XML validation, signing, artifact package generation
+- **Verifiable Settlement Layer** (token auth) — `POST /api/v1/vsl/settle`: validate, govern and sign one exchange; returns a Settlement Receipt (1,000 credits). Validation itself is local, with [sdcvalidator](https://pypi.org/project/sdcvalidator/) against the schema from the catalog, and free.
 
 > **Authenticated Catalog Lookups**: When an API key is provided, catalog search results are filtered according to the Modeler's project preferences configured in SDCStudio. If the Modeler's `prj_filter` setting is enabled (the default), results are scoped to their default project. Without an API key, the catalog returns all published public schemas. This means the same `catalog_list_schemas` tool returns personalized results for authenticated users and broad results for anonymous browsing, with no change to the tool interface.
 
@@ -129,7 +129,7 @@ Copy `sdc-agents.example.yaml` to `sdc-agents.yaml` and fill in values:
 ```yaml
 sdcstudio:
   base_url: "https://sdcstudio.example.com"
-  api_key: "${SDC_API_KEY}"          # Token auth (Catalog preferences + VaaS validation)
+  api_key: "${SDC_API_KEY}"          # SDCStudio API key (catalog preferences, assembly, settlement, wallet)
 
 cache:
   root: ".sdc-cache"
@@ -349,7 +349,7 @@ happened with 4.4.1 before this note existed.
 
 **GeneratorToolset** (3 tools): `generate_instance`, `generate_batch`, `generate_preview` — skeleton-based XML generation with placeholder substitution and optional element pruning
 
-**ValidationToolset** (3 tools): `validate_instance`, `sign_instance`, `validate_batch` — VaaS API with path confinement, token auth, artifact package (.pkg.zip) support
+**ValidationToolset** (3 tools): `validate_instance`, `settle_instance`, `validate_batch` — local validation with sdcvalidator (the instance's `dm-<ct_id>` names the schema, fetched once from the public catalog), recover mode, settlement on the Verifiable Settlement Layer with the receipt written beside the record, path confinement
 
 **DistributionToolset** (5 tools): `inspect_package`, `list_destinations`, `distribute_package`, `distribute_batch`, `bootstrap_triplestore` — httpx-only connectors for SPARQL Graph Store, Neo4j HTTP, REST API, and filesystem
 

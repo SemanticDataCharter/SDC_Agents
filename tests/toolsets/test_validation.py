@@ -1,8 +1,10 @@
-"""Tests for the Validation Toolset."""
+"""Tests for the Validation Toolset (4.5.0: local validation, settlement on the VSL)."""
 
 from __future__ import annotations
 
 import json
+import re
+import shutil
 from pathlib import Path
 
 import httpx
@@ -13,21 +15,17 @@ from sdc_agents.common.exceptions import InsufficientFundsError
 from sdc_agents.toolsets.validation import ValidationToolset
 from tests.conftest import read_audit_records
 from tests.fixtures.validation_responses import (
-    make_insufficient_funds_response,
-    make_sign_response,
-    make_validation_failure,
-    make_validation_success,
+    make_settle_402,
+    make_settle_422,
+    make_settle_response,
 )
 
-
-def _make_mock_transport(response_factory, status_code=200):
-    """Create a MockTransport that returns a JSON response."""
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        data = response_factory()
-        return httpx.Response(status_code, json=data)
-
-    return httpx.MockTransport(handler)
+SAMPLE = Path(__file__).resolve().parents[1] / "fixtures" / "sample_data"
+SCHEMA = SAMPLE / "sdc4_test_schema.xsd"
+VALID = SAMPLE / "sdc4_test_instance_valid.xml"
+INVALID = SAMPLE / "sdc4_test_instance_invalid.xml"
+CT_ID = "clxyz123abcdefghijklmnop"
+BASE = "https://sdcstudio.test.local"
 
 
 @pytest.fixture
@@ -35,10 +33,7 @@ def validation_config(tmp_path: Path) -> SDCAgentsConfig:
     output_dir = tmp_path / "output"
     output_dir.mkdir()
     return SDCAgentsConfig(
-        sdcstudio={
-            "base_url": "https://vaas.test.local",
-            "api_key": "test-token-secret",
-        },
+        sdcstudio={"base_url": BASE, "api_key": "test-token-secret"},
         cache={"root": str(tmp_path / ".sdc-cache")},
         audit={"path": str(tmp_path / "audit.jsonl"), "log_level": "verbose"},
         output={"directory": str(output_dir)},
@@ -46,296 +41,280 @@ def validation_config(tmp_path: Path) -> SDCAgentsConfig:
 
 
 @pytest.fixture
-def sample_xml_file(validation_config: SDCAgentsConfig) -> Path:
-    """Create a sample XML file in the output directory."""
-    output_dir = Path(validation_config.output.directory)
-    xml_file = output_dir / "clxyz123abc_0.xml"
-    xml_file.write_text('<?xml version="1.0"?>\n<sdc4:dm-clxyz123abc>test</sdc4:dm-clxyz123abc>')
-    return xml_file
+def output_dir(validation_config) -> Path:
+    return Path(validation_config.output.directory)
 
 
-# --- Successful validation ---
+@pytest.fixture
+def schema_in_output(output_dir) -> Path:
+    return Path(shutil.copy(SCHEMA, output_dir / "schema.xsd"))
 
 
-async def test_validate_instance_success(
-    validation_config: SDCAgentsConfig, sample_xml_file: Path
+def _copy(src: Path, output_dir: Path, name: str, *, model_marker: bool = False) -> Path:
+    text = src.read_text()
+    if model_marker:
+        text = re.sub(r"^<\?xml[^>]*\?>\s*", "", text)
+        text = f"<!-- model dm-{CT_ID} -->\n" + text
+    path = output_dir / name
+    path.write_text(text)
+    return path
+
+
+def _transport(handler):
+    return httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url=BASE)
+
+
+def _toolset(config, handler=None):
+    def default(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, json={"error": "no network expected"})
+
+    return ValidationToolset(config=config, http_client=_transport(handler or default))
+
+
+# --- Local validation ---
+
+
+async def test_validate_instance_valid_against_an_explicit_schema(
+    validation_config, output_dir, schema_in_output
 ):
-    """Successful validation returns valid=True with zero errors."""
-    transport = _make_mock_transport(make_validation_success)
-    client = httpx.AsyncClient(transport=transport, base_url="https://vaas.test.local")
-    toolset = ValidationToolset(config=validation_config, http_client=client)
-
-    result = await toolset.validate_instance(xml_path=str(sample_xml_file))
+    xml = _copy(VALID, output_dir, "record_0.xml")
+    toolset = _toolset(validation_config)
+    result = await toolset.validate_instance(xml_path=str(xml), schema_path=str(schema_in_output))
     assert result["valid"] is True
-    assert result["structural_errors"] == 0
-    assert result["semantic_errors"] == 0
+    assert result["structural_errors"] == 0 and result["semantic_errors"] == 0
+    assert result["errors"] == []
+    assert result["schema"]["path"] == str(schema_in_output)
 
 
-# --- Validation with errors ---
-
-
-async def test_validate_instance_failure(
-    validation_config: SDCAgentsConfig, sample_xml_file: Path
+async def test_validate_instance_reports_the_two_tiers(
+    validation_config, output_dir, schema_in_output
 ):
-    """Failed validation returns errors and recovered XML."""
-    transport = _make_mock_transport(make_validation_failure)
-    client = httpx.AsyncClient(transport=transport, base_url="https://vaas.test.local")
-    toolset = ValidationToolset(config=validation_config, http_client=client)
-
-    result = await toolset.validate_instance(xml_path=str(sample_xml_file))
+    xml = _copy(INVALID, output_dir, "record_1.xml")
+    toolset = _toolset(validation_config)
+    result = await toolset.validate_instance(xml_path=str(xml), schema_path=str(schema_in_output))
     assert result["valid"] is False
-    assert result["structural_errors"] == 2
-    assert len(result["errors"]) == 2
-    assert result["recovered"] is True
-
-    # Recovered XML should be written
-    recovered_path = Path(result["recovered_path"])
-    assert recovered_path.is_file()
-    assert "recovered" in recovered_path.read_text()
+    assert result["semantic_errors"] == 1
+    assert result["errors"][0]["tier"] == "semantic"
+    assert "not-a-number" in result["errors"][0]["reason"]
+    assert result["recovered"] is False
 
 
-# --- Signing ---
+async def test_recover_mode_writes_a_recovered_file(
+    validation_config, output_dir, schema_in_output, monkeypatch
+):
+    """Recovery itself is sdcvalidator's (it needs a real SDC4 schema with the
+    ExceptionalValue types); here the wiring: semantic errors in 'recover' mode
+    produce <name>.recovered.xml and the result says so."""
+    xml = _copy(INVALID, output_dir, "record_1.xml")
+    toolset = _toolset(validation_config)
+    validator = toolset._validator(schema_in_output)
+
+    def fake_recovery(source, output_path=None, **kwargs):
+        Path(output_path).write_text(VALID.read_text())
+
+    monkeypatch.setattr(validator, "validate_with_recovery", fake_recovery)
+    result = await toolset.validate_instance(
+        xml_path=str(xml), schema_path=str(schema_in_output), mode="recover"
+    )
+    assert result["valid"] is False and result["recovered"] is True
+    recovered = Path(result["recovered_path"])
+    assert recovered.is_file() and recovered.name == "record_1.recovered.xml"
+    assert result["recovered_valid"] is True
 
 
-async def test_sign_instance(validation_config: SDCAgentsConfig, sample_xml_file: Path):
-    """Signing returns signature metadata and writes signed XML."""
-    transport = _make_mock_transport(make_sign_response)
-    client = httpx.AsyncClient(transport=transport, base_url="https://vaas.test.local")
-    toolset = ValidationToolset(config=validation_config, http_client=client)
-
-    result = await toolset.sign_instance(xml_path=str(sample_xml_file))
-    assert result["valid"] is True
-    assert result["signed"] is True
-    assert result["signature"]["algorithm"] == "SHA-256"
-    assert result["signature"]["issuer"] == "sdcstudio.example.com"
-
-    # Signed XML should be written
-    signed_path = Path(result["signed_path"])
-    assert signed_path.is_file()
-    assert "signed" in signed_path.read_text()
-
-
-# --- Auth token ---
-
-
-async def test_auth_token_in_header(validation_config: SDCAgentsConfig, sample_xml_file: Path):
-    """API token is included in Authorization header."""
-    captured_headers = {}
+async def test_the_schema_is_fetched_once_from_the_catalog_by_the_instances_model_id(
+    validation_config, output_dir
+):
+    """No schema_path: the dm-<ct_id> in the instance names it; one GET, then the cache."""
+    calls = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        captured_headers.update(dict(request.headers))
-        return httpx.Response(200, json=make_validation_success())
+        calls.append(str(request.url))
+        if request.url.path == f"/api/v1/catalog/dm/{CT_ID}/xsd/":
+            return httpx.Response(
+                200, content=SCHEMA.read_bytes(), headers={"Content-Type": "application/xml"}
+            )
+        return httpx.Response(404)
 
-    transport = httpx.MockTransport(handler)
-    client = httpx.AsyncClient(transport=transport, base_url="https://vaas.test.local")
-    # Set auth header on client to match what ValidationToolset would do
-    client.headers["Authorization"] = "Token test-token-secret"
-    toolset = ValidationToolset(config=validation_config, http_client=client)
+    xml_a = _copy(VALID, output_dir, "a.xml", model_marker=True)
+    xml_b = _copy(VALID, output_dir, "b.xml", model_marker=True)
+    toolset = _toolset(validation_config, handler)
+    first = await toolset.validate_instance(xml_path=str(xml_a))
+    second = await toolset.validate_instance(xml_path=str(xml_b))
+    assert first["valid"] and second["valid"]
+    assert first["schema"]["ct_id"] == CT_ID
+    assert len(calls) == 1, "the second instance used the cached schema"
+    assert Path(first["schema"]["path"]).name == f"dm-{CT_ID}.xsd"
 
-    await toolset.validate_instance(xml_path=str(sample_xml_file))
-    assert "authorization" in captured_headers
-    assert captured_headers["authorization"] == "Token test-token-secret"
+
+async def test_an_unpublished_model_is_a_clear_error(validation_config, output_dir):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, json={"error": "not found"})
+
+    xml = _copy(VALID, output_dir, "a.xml", model_marker=True)
+    toolset = _toolset(validation_config, handler)
+    with pytest.raises(FileNotFoundError, match="published"):
+        await toolset.validate_instance(xml_path=str(xml))
+
+
+async def test_an_instance_without_a_model_id_needs_a_schema_path(validation_config, output_dir):
+    xml = _copy(VALID, output_dir, "a.xml")
+    toolset = _toolset(validation_config)
+    with pytest.raises(ValueError, match="schema_path"):
+        await toolset.validate_instance(xml_path=str(xml))
 
 
 # --- Path confinement ---
 
 
-async def test_path_confinement_rejects_outside(validation_config: SDCAgentsConfig):
-    """Paths outside output directory are rejected."""
-    transport = _make_mock_transport(make_validation_success)
-    client = httpx.AsyncClient(transport=transport, base_url="https://vaas.test.local")
-    toolset = ValidationToolset(config=validation_config, http_client=client)
-
+async def test_path_confinement_rejects_outside(validation_config):
+    toolset = _toolset(validation_config)
     with pytest.raises(PermissionError, match="outside the output directory"):
-        await toolset.validate_instance(xml_path="/etc/passwd")
+        await toolset.validate_instance(xml_path="/etc/passwd", schema_path=str(SCHEMA))
 
 
-async def test_path_confinement_rejects_traversal(
-    validation_config: SDCAgentsConfig, sample_xml_file: Path
-):
-    """Path traversal attempts are rejected."""
-    transport = _make_mock_transport(make_validation_success)
-    client = httpx.AsyncClient(transport=transport, base_url="https://vaas.test.local")
+async def test_schema_path_is_confined_too(validation_config, output_dir):
+    xml = _copy(VALID, output_dir, "a.xml")
+    toolset = _toolset(validation_config)
+    with pytest.raises(PermissionError):
+        await toolset.validate_instance(xml_path=str(xml), schema_path=str(SCHEMA))
+
+
+# --- Batch ---
+
+
+async def test_validate_batch(validation_config, output_dir, schema_in_output):
+    _copy(VALID, output_dir, "r0.xml")
+    _copy(INVALID, output_dir, "r1.xml")
+    (output_dir / "r1.recovered.xml").write_text("<skip/>")
+    toolset = _toolset(validation_config)
+    result = await toolset.validate_batch(schema_path=str(schema_in_output))
+    assert result["count"] == 2 and result["failed"] == 1
+    assert [r["valid"] for r in result["results"]] == [True, False]
+
+
+# --- Settlement ---
+
+
+async def test_settle_instance_writes_the_receipt(validation_config, output_dir):
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["path"] = request.url.path
+        seen["auth"] = request.headers.get("authorization")
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(200, json=make_settle_response())
+
+    xml = _copy(VALID, output_dir, "r0.xml")
+    client = _transport(handler)
+    client.headers["Authorization"] = "Token test-token-secret"
     toolset = ValidationToolset(config=validation_config, http_client=client)
-
-    traversal_path = str(sample_xml_file.parent / ".." / ".." / "etc" / "passwd")
-    with pytest.raises(PermissionError, match="outside the output directory"):
-        await toolset.validate_instance(xml_path=traversal_path)
-
-
-# --- Batch validation ---
-
-
-async def test_validate_batch(validation_config: SDCAgentsConfig, sample_xml_file: Path):
-    """Batch validates all XML files in the output directory."""
-    # Create a second XML file
-    output_dir = Path(validation_config.output.directory)
-    xml2 = "<sdc4:dm-clxyz123abc>row2</sdc4:dm-clxyz123abc>"
-    (output_dir / "clxyz123abc_1.xml").write_text(xml2)
-
-    transport = _make_mock_transport(make_validation_success)
-    client = httpx.AsyncClient(transport=transport, base_url="https://vaas.test.local")
-    toolset = ValidationToolset(config=validation_config, http_client=client)
-
-    result = await toolset.validate_batch()
-    assert result["count"] == 2
-    assert result["failed"] == 0
-    assert len(result["results"]) == 2
+    result = await toolset.settle_instance(
+        xml_path=str(xml),
+        target_state="released",
+        condition={"type": "delivery", "ref": "PO-1"},
+        parties=["https://buyer.example/.well-known/vsl-key.json", "did:web:seller.example"],
+    )
+    assert seen["path"] == "/api/v1/vsl/settle"
+    assert seen["auth"] == "Token test-token-secret"
+    assert seen["body"]["payload"] == xml.read_text(
+        encoding="utf-8"
+    ), "bytes as on disk, untrimmed"
+    assert seen["body"]["target_state"] == "released" and len(seen["body"]["parties"]) == 2
+    assert "previous_receipt_id" not in seen["body"]
+    assert result["settled"] is True
+    assert result["receipt_id"] == "rcpt0123456789abcdefghij"
+    assert result["charged_credits"] == 1000
+    receipt_path = Path(result["receipt_path"])
+    assert receipt_path.name == "r0.receipt.json"
+    assert json.loads(receipt_path.read_text())["decision"] == "PERMIT"
 
 
-async def test_validate_batch_excludes_recovered(
-    validation_config: SDCAgentsConfig, sample_xml_file: Path
-):
-    """Batch skips .recovered.xml and .signed.xml files."""
-    output_dir = Path(validation_config.output.directory)
-    (output_dir / "test.recovered.xml").write_text("<recovered/>")
-    (output_dir / "test.signed.xml").write_text("<signed/>")
+async def test_settle_402_is_insufficient_funds_in_credits(validation_config, output_dir):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(402, json=make_settle_402())
 
-    transport = _make_mock_transport(make_validation_success)
-    client = httpx.AsyncClient(transport=transport, base_url="https://vaas.test.local")
-    toolset = ValidationToolset(config=validation_config, http_client=client)
-
-    result = await toolset.validate_batch()
-    # Should only process the original sample_xml_file
-    assert result["count"] == 1
+    xml = _copy(VALID, output_dir, "r0.xml")
+    toolset = _toolset(validation_config, handler)
+    with pytest.raises(InsufficientFundsError) as exc_info:
+        await toolset.settle_instance(xml, "released", {}, ["a", "b"])
+    assert exc_info.value.estimated_cost == 1.0
+    assert exc_info.value.balance_remaining == 0.25
+    assert exc_info.value.estimated_cost_credits == 1000
+    assert exc_info.value.balance_remaining_credits == 250
 
 
-# --- Audit logging ---
+async def test_settle_422_surfaces_the_allowed_transitions(validation_config, output_dir):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(422, json=make_settle_422())
+
+    xml = _copy(VALID, output_dir, "r0.xml")
+    toolset = _toolset(validation_config, handler)
+    with pytest.raises(ValueError, match="allowed_transitions"):
+        await toolset.settle_instance(xml, "archived", {}, ["a", "b"])
 
 
-async def test_audit_logged(validation_config: SDCAgentsConfig, sample_xml_file: Path):
-    """Tool invocations are audit logged."""
-    transport = _make_mock_transport(make_validation_success)
-    client = httpx.AsyncClient(transport=transport, base_url="https://vaas.test.local")
-    toolset = ValidationToolset(config=validation_config, http_client=client)
+async def test_settle_needs_an_api_key(tmp_path, output_dir, validation_config):
+    config = SDCAgentsConfig(
+        sdcstudio={"base_url": BASE},
+        cache={"root": str(tmp_path / ".sdc-cache")},
+        audit={"path": str(tmp_path / "audit.jsonl"), "log_level": "verbose"},
+        output={"directory": str(output_dir)},
+    )
+    xml = _copy(VALID, output_dir, "r0.xml")
+    toolset = _toolset(config)
+    with pytest.raises(PermissionError, match="API key"):
+        await toolset.settle_instance(xml, "released", {}, ["a", "b"])
 
-    await toolset.validate_instance(xml_path=str(sample_xml_file))
+
+# --- Audit ---
+
+
+async def test_audit_logged_and_token_redacted(validation_config, output_dir, schema_in_output):
+    xml = _copy(VALID, output_dir, "r0.xml")
+    toolset = _toolset(validation_config)
+    await toolset.validate_instance(xml_path=str(xml), schema_path=str(schema_in_output))
     records = read_audit_records(toolset._audit)
-    assert len(records) >= 1
-    assert records[-1]["tool"] == "validate_instance"
-    assert records[-1]["agent"] == "validation"
-
-
-async def test_token_redacted_in_audit(validation_config: SDCAgentsConfig, sample_xml_file: Path):
-    """API token is redacted in audit logs."""
-    transport = _make_mock_transport(make_validation_success)
-    client = httpx.AsyncClient(transport=transport, base_url="https://vaas.test.local")
-    toolset = ValidationToolset(config=validation_config, http_client=client)
-
-    await toolset.validate_instance(xml_path=str(sample_xml_file))
-    records = read_audit_records(toolset._audit)
-    # The audit log should not contain the actual token
-    log_text = json.dumps(records)
-    assert "test-token-secret" not in log_text
+    assert records[-1]["tool"] == "validate_instance" and records[-1]["agent"] == "validation"
+    assert "test-token-secret" not in json.dumps(records)
 
 
 # --- Tool list ---
 
 
-async def test_get_tools_returns_three(validation_config: SDCAgentsConfig):
-    """get_tools returns exactly 3 tools."""
-    transport = _make_mock_transport(make_validation_success)
-    client = httpx.AsyncClient(transport=transport, base_url="https://vaas.test.local")
-    toolset = ValidationToolset(config=validation_config, http_client=client)
-
+async def test_get_tools_returns_three(validation_config):
+    toolset = _toolset(validation_config)
     tools = await toolset.get_tools()
-    assert len(tools) == 3
-    names = {t.name for t in tools}
-    assert names == {"validate_instance", "sign_instance", "validate_batch"}
+    assert {t.name for t in tools} == {"validate_instance", "settle_instance", "validate_batch"}
 
 
-# --- HTTP 402 Insufficient Funds ---
-
-
-async def test_validate_instance_402(validation_config: SDCAgentsConfig, sample_xml_file: Path):
-    """validate_instance raises InsufficientFundsError on HTTP 402."""
-    transport = _make_mock_transport(make_insufficient_funds_response, status_code=402)
-    client = httpx.AsyncClient(transport=transport, base_url="https://vaas.test.local")
-    toolset = ValidationToolset(config=validation_config, http_client=client)
-
-    with pytest.raises(InsufficientFundsError) as exc_info:
-        await toolset.validate_instance(xml_path=str(sample_xml_file))
-
-    assert exc_info.value.estimated_cost == 0.001
-    assert exc_info.value.balance_remaining == 0.0
-
-
-async def test_sign_instance_402(validation_config: SDCAgentsConfig, sample_xml_file: Path):
-    """sign_instance raises InsufficientFundsError on HTTP 402."""
-    transport = _make_mock_transport(make_insufficient_funds_response, status_code=402)
-    client = httpx.AsyncClient(transport=transport, base_url="https://vaas.test.local")
-    toolset = ValidationToolset(config=validation_config, http_client=client)
-
-    with pytest.raises(InsufficientFundsError) as exc_info:
-        await toolset.sign_instance(xml_path=str(sample_xml_file))
-
-    assert exc_info.value.estimated_cost == 0.001
-    assert exc_info.value.balance_remaining == 0.0
-
-
-async def test_validate_batch_halts_on_402(
-    validation_config: SDCAgentsConfig, sample_xml_file: Path
+async def test_the_production_storage_pointer_is_followed_without_the_api_key(
+    validation_config, output_dir
 ):
-    """Batch validation halts with pending files on 402."""
-    output_dir = Path(validation_config.output.directory)
-    # Create two more XML files (3 total)
-    (output_dir / "clxyz123abc_1.xml").write_text("<sdc4:dm-clxyz123abc>2</sdc4:dm-clxyz123abc>")
-    (output_dir / "clxyz123abc_2.xml").write_text("<sdc4:dm-clxyz123abc>3</sdc4:dm-clxyz123abc>")
-
-    call_count = 0
+    """On production the artifact route answers {"download_url": ...}; the schema is
+    fetched from storage, and the API key never leaves SDCStudio."""
+    seen = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        nonlocal call_count
-        call_count += 1
-        if call_count <= 1:
-            # First file succeeds
-            return httpx.Response(200, json=make_validation_success())
-        # Second file: insufficient funds
-        return httpx.Response(
-            402,
-            json=make_insufficient_funds_response(),
-            headers={
-                "Content-Type": "application/json",
-                "X-SDC-Estimated-Cost": "0.001",
-                "X-SDC-Balance-Remaining": "0.0000",
-            },
-        )
+        seen.append((str(request.url), request.headers.get("authorization")))
+        if request.url.path == f"/api/v1/catalog/dm/{CT_ID}/xsd/":
+            return httpx.Response(
+                200,
+                json={
+                    "download_url": f"https://storage.example/dmlib/dm-{CT_ID}.xsd",
+                    "storage": "gcs",
+                },
+            )
+        if request.url.host == "storage.example":
+            return httpx.Response(200, content=SCHEMA.read_bytes())
+        return httpx.Response(404)
 
-    transport = httpx.MockTransport(handler)
-    client = httpx.AsyncClient(transport=transport, base_url="https://vaas.test.local")
+    xml = _copy(VALID, output_dir, "a.xml", model_marker=True)
+    client = _transport(handler)
+    client.headers["Authorization"] = "Token test-token-secret"
     toolset = ValidationToolset(config=validation_config, http_client=client)
-
-    result = await toolset.validate_batch()
-
-    assert result["halted"] is True
-    assert result["halt_reason"] == "insufficient_funds"
-    assert result["count"] == 1  # Only first file was processed
-    assert len(result["pending_files"]) == 2  # Second and third remain
-    assert result["wallet"]["estimated_cost"] == 0.001
-    assert result["wallet"]["balance_remaining"] == 0.0
-    assert "resume_hint" in result
-
-
-async def test_validate_batch_wallet_headers_surfaced(
-    validation_config: SDCAgentsConfig, sample_xml_file: Path
-):
-    """Wallet cost headers are surfaced in successful validation results."""
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(
-            200,
-            json=make_validation_success(),
-            headers={
-                "Content-Type": "application/json",
-                "X-SDC-Estimated-Cost": "0.001",
-                "X-SDC-Balance-Remaining": "49.999",
-            },
-        )
-
-    transport = httpx.MockTransport(handler)
-    client = httpx.AsyncClient(transport=transport, base_url="https://vaas.test.local")
-    toolset = ValidationToolset(config=validation_config, http_client=client)
-
-    result = await toolset.validate_instance(xml_path=str(sample_xml_file))
-    assert result["estimated_cost"] == 0.001
-    assert result["balance_remaining"] == 49.999
+    result = await toolset.validate_instance(xml_path=str(xml))
+    assert result["valid"] is True
+    assert seen[0][1] == "Token test-token-secret"
+    assert seen[1][0].startswith("https://storage.example/") and seen[1][1] is None
+    assert Path(result["schema"]["path"]).read_bytes() == SCHEMA.read_bytes()
