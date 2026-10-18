@@ -141,7 +141,8 @@ class ValidationToolset(BaseToolset):
             except httpx.HTTPStatusError as exc:
                 if exc.response.status_code == 404:
                     raise FileNotFoundError(
-                        f"No published schema for dm-{ct_id} in the catalog; is the model published?"
+                        f"No published schema for dm-{ct_id} in the catalog; "
+                        "is the model published?"
                     ) from None
                 raise
             cached.write_bytes(content)
