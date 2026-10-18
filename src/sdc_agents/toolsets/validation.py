@@ -26,6 +26,7 @@ import httpx
 from google.adk.tools import FunctionTool
 from google.adk.tools.base_toolset import BaseToolset
 
+from sdc_agents.common.artifacts import fetch_artifact_bytes
 from sdc_agents.common.audit import AuditLogger
 from sdc_agents.common.cache import CacheManager
 from sdc_agents.common.config import SDCAgentsConfig
@@ -133,13 +134,17 @@ class ValidationToolset(BaseToolset):
         ct_id = m.group(1)
         cached = self._schema_dir / f"dm-{ct_id}.xsd"
         if not cached.is_file():
-            resp = await self._http.get(f"/api/v1/catalog/dm/{ct_id}/xsd/")
-            if resp.status_code == 404:
-                raise FileNotFoundError(
-                    f"No published schema for dm-{ct_id} in the catalog; is the model published?"
+            try:
+                content = await fetch_artifact_bytes(
+                    self._http, f"/api/v1/catalog/dm/{ct_id}/xsd/"
                 )
-            resp.raise_for_status()
-            cached.write_bytes(resp.content)
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code == 404:
+                    raise FileNotFoundError(
+                        f"No published schema for dm-{ct_id} in the catalog; is the model published?"
+                    ) from None
+                raise
+            cached.write_bytes(content)
         return cached, ct_id
 
     def _validator(self, schema: Path):

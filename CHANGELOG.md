@@ -29,6 +29,10 @@ aligned with SDC Generation 4.
   components by slot name, and subject, provider, protocol, workflow and acs are model fields,
   not component types, so the catalog answered an empty list and the slots were silently skipped.
   Each slot is asked for by the type its field holds (`CONTEXTUAL_SLOT_TYPES`).
+- **Artifact downloads saved the production storage pointer instead of the artifact.** On the
+  production deployment the catalog artifact routes answer `{"download_url": ...}` (artifacts live
+  in cloud storage) rather than the bytes, so `catalog_download_schema_rdf` returned that JSON.
+  `sdc_agents.common.artifacts.fetch_artifact_bytes` follows the pointer, without the API key.
 - A retired component in an assembly request (SDCStudio answers 409) is reported with the
   server's reason instead of a bare HTTP error.
 - `sqlalchemy[asyncio]` is the dependency, so `greenlet` comes with it; a bare `pip install

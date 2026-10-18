@@ -205,3 +205,22 @@ async def test_download_schema_xsd_is_cached(catalog_config, tmp_path):
     second = await toolset.catalog_download_schema_xsd("clxyz123abcdefghijklmnop")
     assert first == second and Path(first).name == "dm-clxyz123abcdefghijklmnop.xsd"
     assert calls == ["/api/v1/catalog/dm/clxyz123abcdefghijklmnop/xsd/"]
+
+
+async def test_rdf_download_follows_the_production_storage_pointer(catalog_config):
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/catalog/dm/clxyz123abc/ttl/":
+            return httpx.Response(
+                200, json={"download_url": "https://storage.example/dm.ttl", "storage": "gcs"}
+            )
+        if request.url.host == "storage.example":
+            assert "authorization" not in request.headers
+            return httpx.Response(200, content=b"@prefix sdc: <x> .")
+        return httpx.Response(404)
+
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), base_url="https://sdcstudio.test.local"
+    )
+    client.headers["Authorization"] = "Token secret"
+    toolset = CatalogToolset(config=catalog_config, http_client=client)
+    assert (await toolset.catalog_download_schema_rdf("clxyz123abc")).startswith("@prefix")

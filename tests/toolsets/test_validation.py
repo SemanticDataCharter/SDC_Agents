@@ -286,3 +286,35 @@ async def test_get_tools_returns_three(validation_config):
     toolset = _toolset(validation_config)
     tools = await toolset.get_tools()
     assert {t.name for t in tools} == {"validate_instance", "settle_instance", "validate_batch"}
+
+
+async def test_the_production_storage_pointer_is_followed_without_the_api_key(
+    validation_config, output_dir
+):
+    """On production the artifact route answers {"download_url": ...}; the schema is
+    fetched from storage, and the API key never leaves SDCStudio."""
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((str(request.url), request.headers.get("authorization")))
+        if request.url.path == f"/api/v1/catalog/dm/{CT_ID}/xsd/":
+            return httpx.Response(
+                200,
+                json={
+                    "download_url": f"https://storage.example/dmlib/dm-{CT_ID}.xsd",
+                    "storage": "gcs",
+                },
+            )
+        if request.url.host == "storage.example":
+            return httpx.Response(200, content=SCHEMA.read_bytes())
+        return httpx.Response(404)
+
+    xml = _copy(VALID, output_dir, "a.xml", model_marker=True)
+    client = _transport(handler)
+    client.headers["Authorization"] = "Token test-token-secret"
+    toolset = ValidationToolset(config=validation_config, http_client=client)
+    result = await toolset.validate_instance(xml_path=str(xml))
+    assert result["valid"] is True
+    assert seen[0][1] == "Token test-token-secret"
+    assert seen[1][0].startswith("https://storage.example/") and seen[1][1] is None
+    assert Path(result["schema"]["path"]).read_bytes() == SCHEMA.read_bytes()
