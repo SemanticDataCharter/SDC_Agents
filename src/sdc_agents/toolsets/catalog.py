@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import time
+from pathlib import Path
 from typing import Optional
 
 import httpx
@@ -60,6 +61,7 @@ class CatalogToolset(BaseToolset):
             FunctionTool(self.catalog_list_schemas),
             FunctionTool(self.catalog_get_schema),
             FunctionTool(self.catalog_download_schema_rdf),
+            FunctionTool(self.catalog_download_schema_xsd),
             FunctionTool(self.catalog_download_skeleton),
             FunctionTool(self.catalog_download_ontologies),
             FunctionTool(self.catalog_check_wallet),
@@ -144,6 +146,35 @@ class CatalogToolset(BaseToolset):
             start_time=start,
         )
         return result
+
+    async def catalog_download_schema_xsd(self, ct_id: str) -> str:
+        """Download a published model's XSD 1.1 schema, the contract its records validate against.
+
+        Public, no token needed. Cached under schemas/dm-<ct_id>.xsd, where the
+        Validation toolset also looks.
+
+        Args:
+            ct_id: The published data model's identifier.
+
+        Returns:
+            Path to the cached schema file.
+        """
+        start = time.monotonic()
+        schema_dir = Path(self._config.cache.root).resolve() / "schemas"
+        schema_dir.mkdir(parents=True, exist_ok=True)
+        path = schema_dir / f"dm-{ct_id}.xsd"
+        if not path.is_file():
+            resp = await self._http.get(f"/api/v1/catalog/dm/{ct_id}/xsd/")
+            resp.raise_for_status()
+            path.write_bytes(resp.content)
+        self._audit.log(
+            agent="catalog",
+            tool="catalog_download_schema_xsd",
+            inputs={"ct_id": ct_id},
+            outputs={"path": str(path)},
+            start_time=start,
+        )
+        return str(path)
 
     async def catalog_download_skeleton(self, ct_id: str) -> str:
         """Download an XML skeleton instance for a schema.

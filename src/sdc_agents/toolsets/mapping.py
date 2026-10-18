@@ -30,6 +30,16 @@ TYPE_COMPATIBILITY: dict[str, set[str]] = {
     "email": {"XdString"},
     "URL": {"XdString"},
     "UUID": {"XdString"},
+    # An array column (SQL ARRAY, BigQuery REPEATED, a JSON list) is a list
+    # type; SDCStudio has API routes for the eight of them since 4.15.17.
+    "array": {
+        "XdStringList",
+        "XdTokenList",
+        "XdIntegerList",
+        "XdDecimalList",
+        "XdDoubleList",
+        "XdBooleanList",
+    },
 }
 
 

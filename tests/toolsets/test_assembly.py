@@ -288,13 +288,18 @@ async def test_select_contextual_components(assembly_config, assembly_client):
     }
     assert set(ctx.keys()) == expected_slots
 
-    # With our mock data, all 9 should be found
-    assert ctx["audit"] is not None
+    # With our mock data, all 9 should be found: the five slots that are not
+    # type names are asked for by the type the model field holds (4.5.0).
+    assert all(ctx[slot] is not None for slot in expected_slots), ctx
+    assert ctx["subject"]["label"] == "party-identifier"
+    assert ctx["protocol"]["ct_id"] == "clctx_protocol_string"
+    assert ctx["workflow"]["ct_id"] == "clctx_workflow_cluster"
+    assert ctx["acs"]["ct_id"] == "clctx_acs_link"
     assert ctx["audit"]["label"] == "audit-trail"
     assert ctx["attestation"]["label"] == "attestation"
     assert ctx["party"]["label"] == "party-identifier"
-    assert ctx["subject"]["label"] == "subject"
-    assert ctx["provider"]["label"] == "provider"
+    assert ctx["subject"]["label"] == "party-identifier"  # a Party, since 4.5.0
+    assert ctx["provider"]["label"] == "party-identifier"  # a Party, since 4.5.0
     assert ctx["participation"]["label"] == "participation"
     assert ctx["protocol"]["label"] == "protocol"
     assert ctx["workflow"]["label"] == "workflow"
@@ -1079,3 +1084,27 @@ async def test_discover_auto_fetches_modeler_project(assembly_config, tmp_path):
     project_calls = [c for c in call_log if c["project"] is not None]
     assert len(project_calls) >= 1
     assert project_calls[0]["project"] == "clproj_modeler_default"
+
+
+async def test_assemble_refuses_a_retired_component_with_the_reason(assembly_config):
+    """SDCStudio answers 409 for a retired component in the tree; the agent sees why."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/api/v1/dmgen/assemble/" in str(request.url):
+            return httpx.Response(
+                409,
+                json={"error": "Component abc123 (Patient Name) is retired; successor def456"},
+                headers={"Content-Type": "application/json"},
+            )
+        return httpx.Response(404)
+
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), base_url="https://sdcstudio.test.local"
+    )
+    toolset = AssemblyToolset(config=assembly_config, http_client=client)
+    with pytest.raises(ValueError, match="retired"):
+        await toolset.assemble_model(
+            title="T",
+            description="",
+            assembly_tree={"label": "Root", "components": [{"ct_id": "abc123"}], "clusters": []},
+        )

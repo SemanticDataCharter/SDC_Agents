@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A declared type filled by a derived type through xsi:type, the way the
+     SDC4 reference model fills an abstract element with a concrete type. -->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:t="urn:sdcvalidator:test:xsi-type"
+           targetNamespace="urn:sdcvalidator:test:xsi-type"
+           elementFormDefault="qualified">
+  <xs:complexType name="BaseType">
+    <xs:sequence>
+      <xs:element name="label" type="xs:string"/>
+    </xs:sequence>
+  </xs:complexType>
+  <xs:complexType name="OrdinalType">
+    <xs:complexContent>
+      <xs:extension base="t:BaseType">
+        <xs:sequence>
+          <xs:element name="ordinal" type="xs:integer"/>
+          <xs:element name="symbol" type="xs:string"/>
+        </xs:sequence>
+      </xs:extension>
+    </xs:complexContent>
+  </xs:complexType>
+  <xs:element name="root">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="item" type="t:BaseType" maxOccurs="unbounded"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>

@@ -15,7 +15,7 @@ validation, and knowledge graph generation to your agent pipelines.
 | **MappingToolset** | Match datasource columns to schema components by type compatibility and name similarity |
 | **AssemblyToolset** | Compose data models from catalog components — reuse existing or mint new, with wallet billing |
 | **GeneratorToolset** | Generate validated XML instances, batch processing, and preview |
-| **ValidationToolset** | Validate XML instances against schemas, digitally sign via VaaS API |
+| **ValidationToolset** | Validate XML instances locally against their published schemas; settle an exchange on the Verifiable Settlement Layer |
 | **DistributionToolset** | Deliver RDF triples to Fuseki, Neo4j, GraphDB, or REST endpoints |
 | **KnowledgeToolset** | Index domain documentation (JSON, CSV, TTL, Markdown, PDF, DOCX) for semantic search |
 

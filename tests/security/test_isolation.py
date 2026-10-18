@@ -58,6 +58,7 @@ async def test_catalog_only_exposes_catalog_tools(security_config):
         "catalog_list_schemas",
         "catalog_get_schema",
         "catalog_download_schema_rdf",
+        "catalog_download_schema_xsd",
         "catalog_download_skeleton",
         "catalog_download_ontologies",
         "catalog_check_wallet",
@@ -110,7 +111,7 @@ async def test_validation_only_exposes_validation_tools(security_config):
     toolset = ValidationToolset(config=security_config, http_client=client)
     tools = await toolset.get_tools()
     names = {t.name for t in tools}
-    assert names == {"validate_instance", "sign_instance", "validate_batch"}
+    assert names == {"validate_instance", "settle_instance", "validate_batch"}
     # No other toolset tools
     assert not names & {"catalog_list_schemas", "introspect_sql", "generate_instance"}
 
@@ -318,9 +319,9 @@ async def test_no_tool_name_overlap():
         sem_disc = SemanticDiscoveryToolset(config=config)
         all_toolsets["semantic_discovery"] = {t.name for t in await sem_disc.get_tools()}
 
-    # Verify expected counts (5+5+3+3+3+5+3+4+1 = 32 total)
+    # Verify expected counts (4+7+5+3+6+3+3+1+3 = 35 total)
     assert len(all_toolsets["assembly"]) == 4
-    assert len(all_toolsets["catalog"]) == 6
+    assert len(all_toolsets["catalog"]) == 7
     assert len(all_toolsets["distribution"]) == 5
     assert len(all_toolsets["generator"]) == 3
     assert len(all_toolsets["introspect"]) == 6

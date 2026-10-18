@@ -4,7 +4,7 @@
 
 sdcstudio:
   base_url: "https://sdcstudio.example.com"
-  api_key: "${SDC_API_KEY}"          # VaaS token (Validation Agent only)
+  api_key: "${SDC_API_KEY}"          # SDCStudio API key (settlement, assembly, wallet)
   toolbox_url: "http://localhost:5000"  # MCP Toolbox server (optional)
   default_library_project: "SDC4-Core"  # Default project for contextual components
 

@@ -61,38 +61,33 @@ def make_contextual_components_response(
             "label": "party-identifier",
             "component_type": "Party",
         },
-        "subject": {
-            "ct_id": "clctx_subject_cluster",
-            "label": "subject",
-            "component_type": "Subject",
-        },
-        "provider": {
-            "ct_id": "clctx_provider_cluster",
-            "label": "provider",
-            "component_type": "Provider",
-        },
         "participation": {
             "ct_id": "clctx_participation_cluster",
             "label": "participation",
             "component_type": "Participation",
         },
-        "protocol": {
-            "ct_id": "clctx_protocol_cluster",
+        # The catalog filters by component type; these are what the subject,
+        # provider, protocol, workflow and acs slots are asked for (4.5.0).
+        "xdstring": {
+            "ct_id": "clctx_protocol_string",
             "label": "protocol",
-            "component_type": "Protocol",
+            "component_type": "XdString",
         },
-        "workflow": {
+        "cluster": {
             "ct_id": "clctx_workflow_cluster",
             "label": "workflow",
-            "component_type": "Workflow",
+            "component_type": "Cluster",
         },
-        "acs": {
-            "ct_id": "clctx_acs_cluster",
+        "xdlink": {
+            "ct_id": "clctx_acs_link",
             "label": "acs",
-            "component_type": "Acs",
+            "component_type": "XdLink",
         },
     }
-    comp = type_data.get(component_type, type_data["audit"])
+    if component_type not in type_data:
+        # The real catalog answers an empty page for a type it does not know.
+        return {"count": 0, "page": 1, "page_size": 50, "results": []}
+    comp = type_data[component_type]
     return {
         "count": 1,
         "page": 1,

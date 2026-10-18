@@ -116,15 +116,16 @@ async def test_download_ontologies(catalog_toolset: CatalogToolset):
     assert "owl:Ontology" in result
 
 
-async def test_get_tools_returns_six(catalog_toolset: CatalogToolset):
+async def test_get_tools_returns_seven(catalog_toolset: CatalogToolset):
     """get_tools returns exactly 6 tools."""
     tools = await catalog_toolset.get_tools()
-    assert len(tools) == 6
+    assert len(tools) == 7
     names = {t.name for t in tools}
     assert names == {
         "catalog_list_schemas",
         "catalog_get_schema",
         "catalog_download_schema_rdf",
+        "catalog_download_schema_xsd",
         "catalog_download_skeleton",
         "catalog_download_ontologies",
         "catalog_check_wallet",
@@ -185,3 +186,22 @@ async def test_catalog_check_wallet_no_api_key(tmp_path: Path):
 
     with pytest.raises(ValueError, match="API key required"):
         await toolset.catalog_check_wallet()
+
+
+async def test_download_schema_xsd_is_cached(catalog_config, tmp_path):
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        return httpx.Response(
+            200, content=b"<xs:schema/>", headers={"Content-Type": "application/xml"}
+        )
+
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), base_url="https://sdcstudio.test.local"
+    )
+    toolset = CatalogToolset(config=catalog_config, http_client=client)
+    first = await toolset.catalog_download_schema_xsd("clxyz123abcdefghijklmnop")
+    second = await toolset.catalog_download_schema_xsd("clxyz123abcdefghijklmnop")
+    assert first == second and Path(first).name == "dm-clxyz123abcdefghijklmnop.xsd"
+    assert calls == ["/api/v1/catalog/dm/clxyz123abcdefghijklmnop/xsd/"]

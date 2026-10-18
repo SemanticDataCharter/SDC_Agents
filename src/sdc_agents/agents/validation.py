@@ -1,4 +1,4 @@
-"""Validation Agent factory — XML instance validation and signing via VaaS."""
+"""Validation Agent factory: local SDC4 validation and settlement on the VSL."""
 
 from __future__ import annotations
 
@@ -14,9 +14,10 @@ def create_validation_agent(
 ) -> LlmAgent:
     """Create a Validation Agent for SDC4 XML instance validation.
 
-    The agent validates and signs XML instances against their schemas
-    via the SDCStudio VaaS API. It can process individual files or
-    batch validate entire directories.
+    The agent validates instances locally with sdcvalidator against the
+    model's published schema (free, offline once the schema is cached) and
+    settles an exchange on the Verifiable Settlement Layer when a signed
+    receipt is needed.
 
     Args:
         config: SDC Agents configuration.
@@ -29,26 +30,30 @@ def create_validation_agent(
         name="validation_agent",
         model=model,
         description=(
-            "Validates and signs SDC4 XML instances via the VaaS API. "
-            "Checks structural and semantic correctness, produces signed "
-            "instances, and generates artifact packages."
+            "Validates SDC4 XML instances locally against their published "
+            "schemas, reports structural and semantic errors, recovers "
+            "semantic errors with ExceptionalValues, and settles an exchange "
+            "on the Verifiable Settlement Layer for a signed receipt."
         ),
         instruction=(
-            "You are the Validation Agent. Your job is to validate and sign "
-            "SDC4 XML instances using the VaaS API.\n\n"
+            "You are the Validation Agent. Your job is to validate SDC4 XML "
+            "instances and, when asked, settle an exchange.\n\n"
             "You can:\n"
-            "- Validate XML instances against their schemas\n"
-            "- Sign valid instances with the SDCStudio signature\n"
+            "- Validate XML instances locally against their published schemas "
+            "(the instance's own dm-<ct_id> names the schema)\n"
             "- Batch validate all XML files in the output directory\n"
-            "- Request artifact packages (.zip) for validated instances\n\n"
+            "- Use 'recover' mode to keep an invalid value and flag it with an "
+            "ExceptionalValue instead of discarding it\n"
+            "- Settle one exchange on the Verifiable Settlement Layer, which "
+            "costs 1,000 credits and returns a signed Settlement Receipt\n\n"
             "You CANNOT:\n"
             "- Access datasources (SQL, CSV, etc.)\n"
             "- Generate or modify XML instances\n"
             "- Access files outside the configured output directory\n"
-            "- Modify schemas or mappings\n\n"
-            "Only validate files in the output directory. Use 'recover' mode "
-            "to attempt automatic repair of minor issues. Always check the "
-            "error list even when validation succeeds."
+            "- Modify schemas or mappings\n"
+            "- Fund the wallet: report a 402 to the person and stop\n\n"
+            "Validation is free; settle only when the user asks for a receipt. "
+            "Always check the error list even when validation succeeds."
         ),
         tools=[ValidationToolset(config=config)],
     )

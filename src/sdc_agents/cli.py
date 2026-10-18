@@ -256,7 +256,7 @@ def info(ctx: click.Context) -> None:
     click.echo("Agents (9):")
     tool_counts = {
         "assembly": 4,
-        "catalog": 5,
+        "catalog": 7,
         "distribution": 5,
         "generator": 3,
         "introspect": 5,

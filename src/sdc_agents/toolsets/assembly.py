@@ -67,6 +67,23 @@ _STOP_WORDS = frozenset(
 )
 
 
+#: Contextual slot of a data model -> the component type the catalog is asked
+#: for (``/api/v1/catalog/components/?type=``). Subject and provider are
+#: Parties, the protocol is a string, the workflow is a cluster of states, the
+#: access control service is a link (dmgen.models.DM).
+CONTEXTUAL_SLOT_TYPES: dict[str, str] = {
+    "audit": "audit",
+    "attestation": "attestation",
+    "party": "party",
+    "subject": "party",
+    "provider": "party",
+    "participation": "participation",
+    "protocol": "xdstring",
+    "workflow": "cluster",
+    "acs": "xdlink",
+}
+
+
 class AssemblyToolset(BaseToolset):
     """Toolset for component discovery and data model assembly."""
 
@@ -688,23 +705,18 @@ class AssemblyToolset(BaseToolset):
                 "Set sdcstudio.default_library_project in your config."
             )
 
-        # Fetch each contextual type directly from the catalog components endpoint
-        contextual: dict[str, dict | None] = {
-            "audit": None,
-            "attestation": None,
-            "party": None,
-            "subject": None,
-            "provider": None,
-            "participation": None,
-            "protocol": None,
-            "workflow": None,
-            "acs": None,
-        }
+        # Fetch each contextual slot from the catalog components endpoint. A
+        # slot is a model field; the catalog filters by component TYPE, so each
+        # slot is asked for by the type the DM field holds (dmgen.models.DM).
+        # Until 4.5.0 the slot name was sent as the type, and the catalog
+        # answered an empty list for the five slots that are not type names,
+        # so subject, provider, protocol, workflow and acs were silently empty.
+        contextual: dict[str, dict | None] = {slot: None for slot in CONTEXTUAL_SLOT_TYPES}
 
-        for slot in contextual:
+        for slot, component_type in CONTEXTUAL_SLOT_TYPES.items():
             resp = await self._http.get(
                 "/api/v1/catalog/components/",
-                params={"project": project, "type": slot},
+                params={"project": project, "type": component_type},
             )
             resp.raise_for_status()
             data = resp.json()
@@ -787,6 +799,18 @@ class AssemblyToolset(BaseToolset):
 
         resp = await self._http.post(url, json=payload)
         self._check_402(resp)
+        if resp.status_code == 409:
+            # A retired component in the tree (SDCStudio 4.14+): the server names
+            # it; pass allow_retired only when the caller means it.
+            detail = (
+                resp.json()
+                if resp.headers.get("content-type", "").startswith("application/json")
+                else {}
+            )
+            raise ValueError(
+                f"Assembly refused: {detail.get('error', resp.text)} "
+                "(a retired component; choose its successor, or pass allow_retired)"
+            )
         resp.raise_for_status()
         data = resp.json()
 

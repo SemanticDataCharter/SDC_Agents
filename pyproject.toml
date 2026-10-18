@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sdc-agents"
-version = "4.4.1"
+version = "4.5.0"
 description = "Purpose-scoped ADK agents for SDC4 data operations"
 readme = "README.md"
 license = "Apache-2.0"
@@ -32,9 +32,10 @@ dependencies = [
     "pydantic>=2",
     "pyyaml>=6",
     "httpx>=0.27",
-    "sqlalchemy>=2",
+    "sqlalchemy[asyncio]>=2",   # the introspect toolset uses the asyncio extension (needs greenlet)
     "motor>=3.6",
     "jsonpath-ng>=1.6",
+    "sdcvalidator>=4.5.3",      # local validation (Validation toolset, 4.5.0)
 ]
 
 [project.scripts]
