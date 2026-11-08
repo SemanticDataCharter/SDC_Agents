@@ -10,10 +10,10 @@ SDC Agents is a suite of runtime Python agents that interact with customer datas
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 4.0.x   | :white_check_mark: |
-| < 4.0   | :x:                |
+| 4.5.x   | :white_check_mark: |
+| < 4.5   | :x:                |
 
-Only the current major version (4.x.x) aligned with SDC Generation 4 receives updates.
+Only the current minor line (4.5.x) of the major version aligned with SDC Generation 4 receives security updates.
 
 ### Security-Critical Version Floors
 
@@ -93,7 +93,8 @@ Please report security vulnerabilities if you discover:
 
 **Do NOT report security vulnerabilities through public GitHub issues.**
 
-Instead, please report via email or private message to the repository maintainer.
+Instead, report privately through GitHub's private vulnerability reporting: open this repository's Security tab and choose
+"Report a vulnerability" (https://github.com/SemanticDataCharter/SDC_Agents/security/advisories/new). Do not send a report by email.
 
 ### What to Include
 
