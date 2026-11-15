@@ -206,6 +206,8 @@ A named dictionary. Each entry defines a datasource the Introspect Agent can rea
 | `collection` | str | No | `null` | MongoDB collection name |
 | `project` | str | No | `null` | GCP project ID (for `bigquery` type) |
 | `dataset` | str | No | `null` | BigQuery dataset name |
+| `query_timeout_seconds` | int | No | `30` | SQL statement timeout (PostgreSQL, MySQL) |
+| `read_only_role` | bool | No | `false` | SQL only. States that the connection's role can only read. Required for dialects with no session read-only setting (SQL Server, Snowflake, Databricks and others) |
 
 **Required fields by type:**
 
@@ -404,7 +406,7 @@ export DATABRICKS_HTTP_PATH="/sql/1.0/warehouses/abc123"       # SQL warehouse H
 | Snowflake | `snowflake-sqlalchemy` | `snowflake://` |
 | Databricks | `databricks-sql-connector`, `sqlalchemy-databricks` | `databricks://` |
 
-Any SQLAlchemy-compatible driver works. The Introspect Agent enforces read-only access regardless of the underlying platform — only SELECT queries are permitted.
+Every platform gets the statement check: one `SELECT` only. SQLite, PostgreSQL, MySQL and MariaDB also get a read-only connection. SQL Server, Snowflake, Databricks and other dialects have no session read-only setting, so they are refused unless the datasource sets `read_only_role: true`. That setting is your statement that the connection's role can only read; make sure it's true. Use a read-only role on every platform anyway.
 
 ---
 

@@ -300,8 +300,10 @@ class DistributionToolset(BaseToolset):
                     resp = await self._http.head(dest.endpoint, headers=headers, timeout=5.0)
                     if resp.status_code < 500:
                         entry["status"] = "reachable"
-            except Exception:
-                pass  # status stays "unreachable"
+            except Exception as exc:
+                # Status stays "unreachable"; say why. The exception class
+                # only: messages can echo the endpoint URL and its credentials.
+                entry["error"] = type(exc).__name__
 
             results.append(entry)
 

@@ -76,7 +76,9 @@ Download SDC4 ontology definitions. Ontologies are global (not per-schema) in th
 
 ## Introspect Agent
 
-Examines customer datasources and extracts structure. Read-only access only. SQL queries are restricted to SELECT statements — INSERT, UPDATE, DELETE, DROP, ALTER, CREATE, TRUNCATE, REPLACE, and MERGE are rejected.
+Examines customer datasources and extracts structure. Read-only access only. SQL queries are restricted to a single SELECT statement and run on a read-only connection (see `introspect_sql`).
+
+Source values (`sample_values`) appear only in the tool's return value. The copy written to the introspection cache, and anything written to the audit log, holds structure only: names, types, counts and constraints. The cache is shared with the Assembly toolset, which makes network calls.
 
 ### `introspect_sql`
 
@@ -89,7 +91,14 @@ Execute a read-only SQL query against a configured SQL datasource.
 
 **Returns:** `list[dict]` — row dictionaries with column names as keys.
 
-**Security:** Write operations are rejected with `PermissionError`.
+**Security:** two layers, and the query is always rolled back.
+
+1. **The statement is parsed.** Only one `SELECT` or `WITH ... SELECT` statement is accepted, with at most one trailing semicolon. Comments and quoted text are skipped, and the rest is checked. Stacked statements are rejected with `PermissionError`, as are data-modifying keywords anywhere (CTE writes, `SELECT ... INTO`, `FOR UPDATE`, `ATTACH`, `PRAGMA`) and side-effect functions (`nextval`, `pg_read_file`, `load_extension`, `load_file` and others). Text that databases read differently is refused rather than guessed at: a backslash before a closing quote, `--` without a following space, and MySQL `/*! */` comments.
+2. **The connection is read-only.** SQLite runs with `PRAGMA query_only = ON`. PostgreSQL uses `SET TRANSACTION READ ONLY` and `statement_timeout`. MySQL and MariaDB use `SET SESSION TRANSACTION READ ONLY` and `max_execution_time`. Other dialects are refused unless the datasource sets `read_only_role: true`.
+
+The timeout is `query_timeout_seconds` on the datasource (default 30). It isn't enforced on SQLite. The audit log records the query, row count and column names, never the rows.
+
+Neither layer replaces a least-privilege database role: connect with a role that can only `SELECT` what the agents need.
 
 ### `introspect_csv`
 
@@ -313,6 +322,8 @@ List all saved mapping configurations from cache.
 ## Generator Agent
 
 Produces SDC4 XML instances by substituting datasource values into skeleton XML templates using field mappings.
+
+**Security:** files are written only inside `output.directory`. Mapping names and the mapping's `schema_ct_id` must be single names, with no path separators, colons or leading `..`, or the call raises `PermissionError`. The output path must resolve inside the output directory after following symlinks. `generate_batch` stops at the first refusal rather than recording it once per row. The same name check applies to every name used to build a cache path.
 
 ### `generate_instance`
 

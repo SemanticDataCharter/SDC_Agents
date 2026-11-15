@@ -76,6 +76,11 @@ class DatasourceConfig(BaseModel):
     project: Optional[str] = None  # GCP project ID for BigQuery
     dataset: Optional[str] = None  # BigQuery dataset name
     metadata_path: Optional[str] = None  # Path to sidecar metadata JSON
+    query_timeout_seconds: int = Field(default=30, gt=0)  # SQL statement timeout
+    # SQL only. Set true to state that the connection's database role can only
+    # read. Needed for dialects with no session read-only setting (SQL Server,
+    # Snowflake, Databricks, ...), which are otherwise refused.
+    read_only_role: bool = False
 
 
 class DestinationConfig(BaseModel):
