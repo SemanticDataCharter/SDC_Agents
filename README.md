@@ -1,6 +1,6 @@
 # SDC Agents
 
-**Purpose-scoped ADK agents for producing SDC4-compliant data artifacts from existing datastores.**
+**Purpose-scoped ADK agents that read your existing data sources and help you build SDC4 model components and models in SDCStudio.**
 
 [![PyPI](https://img.shields.io/pypi/v/sdc-agents.svg)](https://pypi.org/project/sdc-agents/)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
@@ -12,13 +12,20 @@
 
 ## What is SDC Agents?
 
-SDC Agents is an open-source suite of **nine purpose-scoped agents** built on Google's [Agent Development Kit (ADK)](https://google.github.io/adk-docs/) that transform data from SQL databases, CSV files, and JSON sources into validated, multi-format SDC4 artifacts — without requiring the user to write XML, RDF, or GQL by hand.
+SDC Agents is an open-source suite of **nine purpose-scoped agents** built on Google's [Agent Development Kit (ADK)](https://google.github.io/adk-docs/) for **design time**: building SDC4 data models in [SDCStudio](https://github.com/Axius-SDC/SDCStudio) from the data sources a customer already has. The agents:
+
+1. **Introspect structure.** Read the structure of SQL databases, BigQuery, MongoDB collections, CSV and JSON files (read-only; sample values go back to the caller but are stripped from the cache and audit log).
+2. **Gather context.** Index the customer's data dictionaries, glossaries and ontologies (Knowledge Agent), and search a Vertex AI Search data store for SDC4 resources (Semantic Discovery Agent).
+3. **Suggest mappings.** Rank published SDC4 components for each column by type compatibility and name similarity.
+4. **Assemble models.** Find reusable catalog components, propose a Cluster hierarchy, and call SDCStudio's Assembly API, which creates any new components and **publishes** the data model.
+
+The instance tools (Generator and Validation agents) produce **sample records for testing a model**: they fill the model's XML skeleton from a few rows of a CSV or JSON file and validate the result against the published schema.
+
+> **Not for operational ingest.** SDC Agents are not the path for a customer's live data. In production, data reaches Governed Data Records through ETL you build into the application SDCStudio generates from a published model: a Django app stack (PostgreSQL; Lightweight adds Apache Fuseki, Enterprise adds GraphDB) or a Supabase kit (TypeScript, where every record goes through a `gate` Edge Function; no graph database yet). See SDCStudio's [App Generation guide](https://github.com/Axius-SDC/SDCStudio/blob/main/docs/user-guides/app-generation.md).
 
 Each agent is an ADK `LlmAgent` with a narrowly scoped `BaseToolset`, auditable activity, and enforced isolation boundaries. No single agent can reach across scope boundaries — a compromised or misbehaving agent has blast radius limited to its purpose.
 
 **MCP compatibility**: Each toolset can also be exported as an MCP server for framework-agnostic integration with non-ADK clients.
-
-![From Craftsman to Factory: Traditional RAG/ETL vs Axius SDC pipeline](docs/images/craftsman-to-factory.png)
 
 ---
 
@@ -29,11 +36,11 @@ Each agent is an ADK `LlmAgent` with a narrowly scoped `BaseToolset`, auditable 
 | **Catalog Agent** | Discover published SDC4 schemas and download artifacts from SDCStudio | HTTPS (optional token auth) | None |
 | **Introspect Agent** | Examine customer datasources and extract structure (read-only) | None | Read-only |
 | **Mapping Agent** | Suggest and manage column-to-component mappings | None | None |
-| **Generator Agent** | Produce SDC4 XML instances from mapped data | None | Read-only |
-| **Validation Agent** | Validate XML instances locally against their published schemas; settle an exchange on the Verifiable Settlement Layer for a signed receipt | HTTPS (public catalog for schemas; token auth for settlement) | None |
-| **Distribution Agent** | Route artifact packages to customer-local destinations | Customer-local only | None |
-| **Knowledge Agent** | Ingest customer context (CSV, JSON, TTL, Markdown, PDF, DOCX) into vector store | None | Read-only (files) |
-| **Assembly Agent** | Discover components, propose hierarchies, assemble published models | HTTPS (Assembly API) | None |
+| **Generator Agent** | Produce sample SDC4 XML records from a CSV or JSON file, for testing a model | None | Read-only |
+| **Validation Agent** | Validate sample records locally against their published schemas; settle an exchange on the Verifiable Settlement Layer for a signed receipt | HTTPS (public catalog for schemas; token auth for settlement) | None |
+| **Distribution Agent** | Load SDC4 ontologies and schema RDF into a development triplestore; check destination connectivity (package tools deprecated) | Configured destinations only | None |
+| **Knowledge Agent** | Index customer context (CSV, JSON, TTL, Markdown, PDF, DOCX) into a local vector store | None | Read-only (files) |
+| **Assembly Agent** | Discover reusable components, propose Cluster hierarchies, assemble and publish models through the Assembly API | HTTPS (Assembly API) | None |
 | **Semantic Discovery Agent** | Search Vertex AI Search for SDC4 resources (ADK-only) | GCP (Vertex AI Search) | None |
 
 ### Security Principles
@@ -56,28 +63,38 @@ SDC Agents is designed consistent with [IEEE 7000-2021](https://standards.ieee.o
 
 ### Data Flow
 
-Agents communicate through **files on disk**, not direct calls. Every handoff is an inspectable, version-controllable artifact:
+Agents communicate through **files on disk**, not direct calls. Every handoff is an inspectable, version-controllable artifact.
+
+**Building a model (the primary path):**
 
 ```
-Catalog Agent → .sdc-cache/schemas/     ─┐
-Introspect Agent → .sdc-cache/introspections/ ─┤
-                                               ▼
-                                    Mapping Agent → .sdc-cache/mappings/
-                                               ▼
-                                    Generator Agent → ./sdc-output/*.xml
-                                               ▼
-                                    Validation Agent → ./sdc-output/*.pkg.zip
-                                               ▼
-                                    Distribution Agent → customer destinations
+Introspect Agent  → .sdc-cache/introspections/   (structure only)
+Knowledge Agent   → .sdc-cache/knowledge/        (local vector index)
+Catalog Agent     → .sdc-cache/schemas/          (published models to match against)
+                          ▼
+Mapping Agent     → .sdc-cache/mappings/         (column → component suggestions)
+                          ▼
+Assembly Agent    → SDCStudio Assembly API       (creates components, publishes the model)
 ```
+
+**Testing a published model with sample records (optional):**
+
+```
+Catalog Agent     → .sdc-cache/skeletons/        (the model's XML skeleton)
+Generator Agent   → ./output/*.xml               (a few rows of a CSV or JSON file)
+Validation Agent  → pass/fail per record         (local, against the published XSD)
+```
+
+The generator reads **CSV or JSON files only** (not SQL, MongoDB or BigQuery), and it re-reads and re-parses the whole file for every record it writes, so a batch of *n* rows reads the file *n* times. That is fine for a handful of sample records and unsuited to bulk loading, which is not what it is for (see *Not for operational ingest* above).
 
 ---
 
 ## SDCStudio API Dependencies
 
-SDC Agents consumes two sets of endpoints from [SDCStudio](https://github.com/Axius-SDC/SDCStudio):
+SDC Agents consumes three sets of endpoints from [SDCStudio](https://github.com/Axius-SDC/SDCStudio):
 
-- **Catalog API** (public, optional token auth) — schema discovery, component trees, skeleton templates, schema-level RDF, reference ontologies
+- **Catalog API** (public, optional token auth) — schema discovery, component trees, skeleton templates, schema-level RDF and XSD, reference ontologies, wallet balance (token)
+- **Assembly API** (token auth) — `POST /api/v1/dmgen/assemble/`: create any new components, build and **publish** the data model, and return it (decision D4 in [COMPONENT_ASSEMBLY_DESIGN.md](docs/dev/COMPONENT_ASSEMBLY_DESIGN.md))
 - **Verifiable Settlement Layer** (token auth) — `POST /api/v1/vsl/settle`: validate, govern and sign one exchange; returns a Settlement Receipt (1,000 credits). Validation itself is local, with [sdcvalidator](https://pypi.org/project/sdcvalidator/) against the schema from the catalog, and free.
 
 > **Authenticated Catalog Lookups**: When an API key is provided, catalog search results are filtered according to the Modeler's project preferences configured in SDCStudio. If the Modeler's `prj_filter` setting is enabled (the default), results are scoped to their default project. Without an API key, the catalog returns all published public schemas. This means the same `catalog_list_schemas` tool returns personalized results for authenticated users and broad results for anonymous browsing, with no change to the tool interface.
@@ -119,7 +136,7 @@ The `dev` extra pulls BigQuery, because the BigQuery introspection tests are
 part of the suite.
 
 ```bash
-pytest -q          # 228 passed, 2 skipped
+pytest -q          # 450 passed, 2 skipped
 ```
 
 ### Configuration
@@ -152,19 +169,12 @@ output:
   formats:
     - "xml"
 
+# Optional: a development triplestore for bootstrap_triplestore
 destinations:
-  triplestore:
+  dev_triplestore:
     type: fuseki
     endpoint: "${FUSEKI_URL}"
     auth: "${FUSEKI_AUTH}"
-  graph_database:
-    type: neo4j
-    endpoint: "${NEO4J_URL}"
-    database: "sdc4"
-  archive:
-    type: filesystem
-    path: "./archive/{ct_id}/{instance_id}/"
-    create_directories: true
 ```
 
 Environment variables use `${VAR}` syntax. Missing variables cause an immediate `KeyError` (fail closed).
@@ -173,22 +183,27 @@ Environment variables use `${VAR}` syntax. Missing variables cause an immediate 
 
 ```python
 from sdc_agents.common.config import load_config
-from sdc_agents.agents.catalog import create_catalog_agent
 from sdc_agents.agents.introspect import create_introspect_agent
+from sdc_agents.agents.knowledge import create_knowledge_agent
+from sdc_agents.agents.catalog import create_catalog_agent
 from sdc_agents.agents.mapping import create_mapping_agent
+from sdc_agents.agents.assembly import create_assembly_agent
 from sdc_agents.agents.generator import create_generator_agent
 from sdc_agents.agents.validation import create_validation_agent
-from sdc_agents.agents.distribution import create_distribution_agent
 
 config = load_config("sdc-agents.yaml")
 
 # Each factory returns an LlmAgent with its scoped BaseToolset
-catalog_agent = create_catalog_agent(config)
+# Design time: build and publish a model
 introspect_agent = create_introspect_agent(config)
+knowledge_agent = create_knowledge_agent(config)
+catalog_agent = create_catalog_agent(config)
 mapping_agent = create_mapping_agent(config)
+assembly_agent = create_assembly_agent(config)
+
+# Optional: sample records for testing the published model
 generator_agent = create_generator_agent(config)
 validation_agent = create_validation_agent(config)
-distribution_agent = create_distribution_agent(config)
 ```
 
 Or construct agents directly with toolsets:
@@ -330,32 +345,38 @@ happened with 4.4.1 before this note existed.
 |---|---|---|
 | **Phase 1** | Catalog, Introspect, and Mapping agents with shared infra | **Complete** |
 | **Phase 2** | Generator and Validation agents, Introspect extensions | **Complete** |
-| **Phase 3** | Distribution Agent with multi-destination delivery | **Complete** |
+| **Phase 3** | Distribution Agent with multi-destination delivery | **Complete** (package delivery deprecated: nothing produces packages since VaaS was retired) |
 | **Phase 4** | Production hardening: CLI, Docker, CI/CD, MCP export, documentation | **Complete** |
 | **Phase 5** | Knowledge Agent + Component Assembly Agent | **Complete** |
 | **Phase 5.5** | PDF/DOCX Knowledge Sources + Semantic Discovery Agent | **Complete** |
 | **Phase 6** | ADK ecosystem contributions (`adk-sparql-tools`, Integration Page) | **Complete** |
 
-### What's Implemented (Phases 1–3)
+### What's Implemented
 
 **Common infrastructure**:
 - Pydantic config with `${VAR}` substitution (fail closed), append-only JSONL audit logger with credential redaction, cache manager with path helpers
 
-**CatalogToolset** (5 tools): `catalog_list_schemas`, `catalog_get_schema`, `catalog_download_schema_rdf`, `catalog_download_skeleton`, `catalog_download_ontologies` — httpx async, cache-first for immutable schemas, optional token auth for Modeler-scoped results
+**CatalogToolset** (7 tools): `catalog_list_schemas`, `catalog_get_schema`, `catalog_download_schema_rdf`, `catalog_download_schema_xsd`, `catalog_download_skeleton`, `catalog_download_ontologies`, `catalog_check_wallet` — httpx async, cache-first for immutable schemas, optional token auth for Modeler-scoped results
 
-**IntrospectToolset** (5 tools): `introspect_sql` (SELECT-only enforcement), `introspect_csv` (type inference for 10 types), `introspect_json` (JSONPath extraction), `introspect_mongodb` (BSON-to-SDC4 type mapping), `introspect_bigquery` (BigQuery schema extraction via `asyncio.to_thread`)
+**IntrospectToolset** (6 tools): `introspect_sql` (read-only SELECT enforcement), `introspect_sql_schema` (catalog metadata via SQLAlchemy's inspector), `introspect_csv` (type inference for 10 types), `introspect_json` (JSONPath extraction), `introspect_mongodb` (BSON-to-SDC4 type mapping), `introspect_bigquery` (BigQuery schema extraction via `asyncio.to_thread`)
 
 **MappingToolset** (3 tools): `mapping_suggest` (type compatibility + name similarity), `mapping_confirm`, `mapping_list`
 
-**GeneratorToolset** (3 tools): `generate_instance`, `generate_batch`, `generate_preview` — skeleton-based XML generation with placeholder substitution and optional element pruning
+**GeneratorToolset** (3 tools): `generate_instance`, `generate_batch`, `generate_preview` — sample records for testing a model: skeleton-based XML generation with placeholder substitution and optional element pruning. Reads CSV or JSON files only (or a record passed in directly), and re-reads the whole file for each row
 
 **ValidationToolset** (3 tools): `validate_instance`, `settle_instance`, `validate_batch` — local validation with sdcvalidator (the instance's `dm-<ct_id>` names the schema, fetched once from the public catalog), recover mode, settlement on the Verifiable Settlement Layer with the receipt written beside the record, path confinement
 
-**DistributionToolset** (5 tools): `inspect_package`, `list_destinations`, `distribute_package`, `distribute_batch`, `bootstrap_triplestore` — httpx-only connectors for SPARQL Graph Store, Neo4j HTTP, REST API, and filesystem
+**DistributionToolset** (5 tools): `bootstrap_triplestore` (load SDC4 ontologies and schema RDF into Fuseki or GraphDB, idempotent), `list_destinations` (connectivity check); deprecated, removal planned for 4.6.0: `inspect_package`, `distribute_package`, `distribute_batch`, which route `.pkg.zip` packages that nothing produces since the validation service (VaaS) was retired
 
-**Agent factories**: `create_catalog_agent()`, `create_introspect_agent()`, `create_mapping_agent()`, `create_generator_agent()`, `create_validation_agent()`, `create_distribution_agent()`
+**KnowledgeToolset** (3 tools): `ingest_knowledge_source`, `query_knowledge`, `list_indexed_sources` — local Chroma vector store
 
-**176+ tests, 82% coverage** — 9 toolsets with 32 disjoint tools, security isolation tests (SQL write rejection, datasource name enforcement, path confinement, credential redaction, no cross-scope tool leakage)
+**AssemblyToolset** (4 tools): `discover_components`, `propose_cluster_hierarchy`, `select_contextual_components`, `assemble_model` — catalog-first component reuse; `assemble_model` posts to the Assembly API, which publishes the model (synchronously when every component is reused, as a background task when some must be created)
+
+**SemanticDiscoveryToolset** (1 tool, ADK-only): `vertex_ai_search`
+
+**Agent factories**: one `create_<name>_agent()` per agent in `sdc_agents.agents`
+
+**9 toolsets with 35 disjoint tools** — security isolation tests (SQL write rejection, datasource name enforcement, path confinement, credential redaction, no cross-scope tool leakage)
 
 **Consumer-first**: all tests use `httpx.MockTransport` — zero live SDCStudio, Fuseki, or Neo4j dependency
 
@@ -363,7 +384,7 @@ happened with 4.4.1 before this note existed.
 
 ## Related Projects
 
-- **[SDCStudio](https://github.com/Axius-SDC/SDCStudio)** — SDC4 data model creation and management platform (provides Catalog and VaaS APIs)
+- **[SDCStudio](https://github.com/Axius-SDC/SDCStudio)** — SDC4 data model creation and management platform (provides the Catalog and Assembly APIs and the Verifiable Settlement Layer; generates the app stacks and Supabase kits that carry operational data)
 - **[SDCRM](https://github.com/SemanticDataCharter/SDCRM)** — SDC4 Reference Model specification
 - **[Form2SDCTemplate](https://github.com/SemanticDataCharter/Form2SDCTemplate)** — PDF/DOCX to SDC template conversion
 - **[Google ADK](https://google.github.io/adk-docs/)** — Agent Development Kit (agent framework)

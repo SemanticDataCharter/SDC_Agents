@@ -88,25 +88,13 @@ output:
   formats:
     - "xml"
 
+# Optional: a development triplestore for bootstrap_triplestore (Distribution
+# Agent), which loads SDC4 ontologies and a model's schema RDF. SDC Agents are
+# design-time tools; operational data goes through the app stack or Supabase
+# kit SDCStudio generates from a published model. The neo4j, rest_api and
+# filesystem destination types serve only the deprecated package tools.
 destinations:
-  triplestore:
+  dev_triplestore:
     type: "fuseki"
     endpoint: "${FUSEKI_URL}"
     auth: "${FUSEKI_AUTH}"
-    upload_method: "named_graph"
-  graph_database:
-    type: "neo4j"
-    endpoint: "${NEO4J_URL}"
-    auth: "${NEO4J_AUTH}"
-    database: "sdc4"
-  document_store:
-    type: "rest_api"
-    endpoint: "${DATA_API_URL}"
-    method: "POST"
-    headers:
-      Authorization: "Bearer ${DATA_API_TOKEN}"
-      Content-Type: "application/json"
-  archive:
-    type: "filesystem"
-    path: "./archive/{ct_id}/{instance_id}/"
-    create_directories: true

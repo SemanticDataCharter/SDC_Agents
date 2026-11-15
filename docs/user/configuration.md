@@ -9,8 +9,8 @@ SDC Agents uses a single YAML configuration file. For a quick overview, see the 
 ```yaml
 # SDCStudio API connection
 sdcstudio:
-  base_url: "https://sdcstudio.example.com"   # Required. Catalog + VaaS API base URL.
-  api_key: "${SDC_API_KEY}"                    # Optional. VaaS token (Validation Agent only).
+  base_url: "https://sdcstudio.example.com"   # Required. SDCStudio base URL (catalog, assembly, settlement).
+  api_key: "${SDC_API_KEY}"                    # Optional. Token for assembly, settlement, wallet, and Modeler-scoped catalog results.
   toolbox_url: "http://localhost:5000"         # Optional. MCP Toolbox server for SQL adapters.
   default_library_project: "SDC4-Core"         # Optional. Default project for contextual components.
 
@@ -74,7 +74,8 @@ output:
   formats:
     - "xml"                # Output formats list
 
-# Destinations — named delivery targets for artifact packages
+# Destinations — a development triplestore for bootstrap_triplestore.
+# neo4j, rest_api and filesystem are used only by the deprecated package tools.
 destinations:
   triplestore:
     type: "fuseki"
@@ -108,8 +109,8 @@ destinations:
 
 | Field | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `base_url` | str | Yes | `https://sdcstudio.example.com` | SDCStudio Catalog and VaaS API base URL |
-| `api_key` | str | No | `null` | VaaS API token. Only needed by the Validation Agent. |
+| `base_url` | str | Yes | `https://sdcstudio.example.com` | SDCStudio base URL: Catalog API, Assembly API, Verifiable Settlement Layer |
+| `api_key` | str | No | `null` | SDCStudio API token. Needed by the Assembly Agent, by `settle_instance` and `catalog_check_wallet`; optional for the catalog (scopes results to the Modeler's project). |
 | `toolbox_url` | str | No | `null` | MCP Toolbox server URL for extended SQL adapters (optional) |
 | `default_library_project` | str | No | `null` | Default project for contextual component discovery (Assembly Agent) |
 
@@ -223,12 +224,12 @@ A named dictionary. Each entry defines a datasource the Introspect Agent can rea
 
 | Field | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `directory` | str | No | `./output` | Directory for generated XML instances and artifact packages |
+| `directory` | str | No | `./output` | Directory for generated sample XML records, recovered files and settlement receipts |
 | `formats` | list[str] | No | `["xml"]` | Output format list |
 
 ### `destinations`
 
-A named dictionary. Each entry defines a delivery target for the Distribution Agent.
+A named dictionary of targets for the Distribution Agent. `bootstrap_triplestore` uses the first `fuseki` or `graphdb` entry, typically a development triplestore; `list_destinations` checks every entry. The `neo4j`, `rest_api` and `filesystem` types, and `graph_uri_from`, matter only to the deprecated package tools (`distribute_package`, `distribute_batch`), which are planned for removal in 4.6.0.
 
 **Common fields:**
 
@@ -285,7 +286,7 @@ datasources:
 
 This is enough to run the Introspect Agent (CSV introspection), Mapping Agent (suggestions from cached schemas), and Generator Agent (XML output to `./output/`).
 
-### Full Pipeline
+### Model Design with Sample Testing
 
 ```yaml
 sdcstudio:
@@ -293,27 +294,23 @@ sdcstudio:
   api_key: "${SDC_API_KEY}"
 
 datasources:
-  patients:
-    type: csv
-    path: "./data/patients.csv"
-  lab_results:
+  lab_results:            # introspected for model design
     type: sql
     connection_string: "${LAB_DB_URL}"
+  lab_sample:             # a few exported rows, for sample records
+    type: csv
+    path: "./data/lab_sample.csv"
 
 output:
   directory: "./output"
 
 destinations:
-  triplestore:
+  dev_triplestore:
     type: fuseki
     endpoint: "http://localhost:3030/sdc4/data"
-  archive:
-    type: filesystem
-    path: "./archive/{ct_id}/{instance_id}/"
-    create_directories: true
 ```
 
-This enables 6 agents: Catalog discovery, Introspect from CSV + SQL, Mapping, Generation, Validation + signing via VaaS, and Distribution to Fuseki + filesystem archive. Add `knowledge:` and `sdcstudio.default_library_project` to enable the Knowledge and Assembly agents. Add `vertex_ai_search:` to enable the Semantic Discovery Agent (9 agents total).
+This enables Catalog discovery, Introspect from SQL and CSV, Mapping, sample-record Generation (from the CSV; the generator does not read SQL), local Validation (settlement uses the API key), and a development triplestore for `bootstrap_triplestore`. Add `knowledge:` and `sdcstudio.default_library_project` to enable the Knowledge and Assembly agents. Add `vertex_ai_search:` to enable the Semantic Discovery Agent (9 agents total).
 
 ---
 
