@@ -323,6 +323,8 @@ List all saved mapping configurations from cache.
 
 Produces SDC4 XML instances by substituting datasource values into skeleton XML templates using field mappings.
 
+**Security:** files are written only inside `output.directory`. Mapping names and the mapping's `schema_ct_id` must be single names, with no path separators, colons or leading `..`, or the call raises `PermissionError`. The output path must resolve inside the output directory after following symlinks. `generate_batch` stops at the first refusal rather than recording it once per row. The same name check applies to every name used to build a cache path.
+
 ### `generate_instance`
 
 Generate a single SDC4 XML instance from a mapped datasource record.

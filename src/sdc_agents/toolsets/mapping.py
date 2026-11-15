@@ -14,7 +14,7 @@ from google.adk.tools import FunctionTool
 from google.adk.tools.base_toolset import BaseToolset
 
 from sdc_agents.common.audit import AuditLogger
-from sdc_agents.common.cache import CacheManager
+from sdc_agents.common.cache import CacheManager, check_name
 from sdc_agents.common.config import SDCAgentsConfig
 
 # Type compatibility matrix: source_type -> set of compatible SDC4 component types
@@ -170,6 +170,10 @@ class MappingToolset(BaseToolset):
             if missing:
                 raise ValueError(f"Mapping entry {i} missing keys: {missing}")
 
+        # The generator later uses schema_ct_id to name files: refuse a bad one
+        # here, when it is saved, rather than at generation time.
+        if schema_ct_id:
+            check_name(schema_ct_id, "schema_ct_id")
         mapping_config = {
             "name": mapping_name,
             "schema_ct_id": schema_ct_id,

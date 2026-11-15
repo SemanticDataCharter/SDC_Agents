@@ -17,7 +17,7 @@ from google.adk.tools import FunctionTool
 from google.adk.tools.base_toolset import BaseToolset
 
 from sdc_agents.common.audit import AuditLogger
-from sdc_agents.common.cache import CacheManager
+from sdc_agents.common.cache import CacheManager, check_inside, check_name
 from sdc_agents.common.config import SDCAgentsConfig
 
 
@@ -219,7 +219,9 @@ class GeneratorToolset(BaseToolset):
         start = time.monotonic()
 
         mapping_config = self._load_mapping_config(mapping_name)
-        ct_id = mapping_config["schema_ct_id"]
+        # ct_id comes from a cached file and names the output file: check it
+        # before anything is read or written with it.
+        ct_id = check_name(str(mapping_config.get("schema_ct_id", "")), "schema_ct_id")
         skeleton_xml = self._load_skeleton(ct_id)
         field_mapping = self._load_field_mapping(ct_id)
 
@@ -239,9 +241,10 @@ class GeneratorToolset(BaseToolset):
             pass
 
         # Write output
-        idx = row_index if row_index is not None else 0
+        idx = int(row_index) if row_index is not None else 0
         filename = f"{ct_id}_{idx}.xml"
-        output_path = self._output_dir / filename
+        # Only ever inside the output directory, symlinks included.
+        output_path = check_inside(self._output_dir / filename, self._output_dir, "output file")
         output_path.write_text(xml_str)
 
         # Determine root element name from skeleton
@@ -294,6 +297,9 @@ class GeneratorToolset(BaseToolset):
             except IndexError:
                 # Reached end of datasource
                 break
+            except PermissionError:
+                # A refused name or path is the same for every row: stop.
+                raise
             except Exception as exc:
                 errors.append({"row": i, "error": str(exc)})
 
@@ -330,7 +336,7 @@ class GeneratorToolset(BaseToolset):
         start = time.monotonic()
 
         mapping_config = self._load_mapping_config(mapping_name)
-        ct_id = mapping_config["schema_ct_id"]
+        ct_id = check_name(str(mapping_config.get("schema_ct_id", "")), "schema_ct_id")
         skeleton_xml = self._load_skeleton(ct_id)
         field_mapping = self._load_field_mapping(ct_id)
 

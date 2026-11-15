@@ -43,6 +43,18 @@ aligned with SDC Generation 4.
   default sits in the same cache tree. `introspect_sql` now logs the row count and column names
   at every level. The other introspect tools log the structure-only result.
 
+- **The generator writes only inside the output directory (Medium).** `generate_instance` built
+  its output file name from the mapping's `schema_ct_id`, which comes from a cached file, so a
+  value like `../../elsewhere/x` wrote outside `output.directory`. Two changes fix it:
+  - `CacheManager` now checks every name it builds a path from: ct_ids, mapping, datasource and
+    knowledge-source names. A name must be one path component, with no separators, colon, NUL or
+    leading `..`, and the resulting path must stay inside its subdirectory, symlinks included.
+    New helpers: `check_name` and `check_inside`.
+  - The generator checks `schema_ct_id` before using it, and refuses an output path that resolves
+    outside the output directory. `generate_batch` stops on a refusal instead of logging it once
+    per row.
+  - `mapping_confirm` refuses a bad `schema_ct_id` when the mapping is saved.
+
 ### Changed
 - **SQL Server, Snowflake, Databricks and other dialects need `read_only_role: true`.** They have
   no session read-only setting, so `introspect_sql` and `introspect_sql_schema` refuse them by
