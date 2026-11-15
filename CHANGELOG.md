@@ -14,7 +14,7 @@ aligned with SDC Generation 4.
 
 ---
 
-## [Unreleased]
+## [4.5.2] - 2026-11-15
 
 ### Security
 - **`introspect_sql` is read-only by construction (High).** 4.5.1 checked only the start of the
