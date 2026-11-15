@@ -27,7 +27,8 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "google-adk>=1.28.1",  # Security: CVE-2026-4810 CRITICAL (code injection + missing auth)
+    "google-adk>=2.14.0",  # CVE-2026-4810 (>=1.28.1); 2.14.0 is the first to allow the fixed opentelemetry-api
+    "opentelemetry-api>=1.45.1",  # Security: CVE-2026-114603 (transitive via google-adk)
     "click>=8",
     "pydantic>=2",
     "pyyaml>=6",
@@ -36,6 +37,14 @@ dependencies = [
     "motor>=3.6",
     "jsonpath-ng>=1.6",
     "sdcvalidator>=4.5.3",      # local validation (Validation toolset, 4.5.0)
+    # Security floors for packages pulled in by the dependencies above
+    # (pip-audit, 2026-11-15). Each is the lowest release fixing every advisory listed.
+    "pymongo>=4.18.3",          # via motor: PYSEC-2026-4294..4297, CVE-2026-106435
+    "urllib3>=2.8.0",           # PYSEC-2026-4175..4177
+    "certifi>=2026.10.18",      # via httpx: PYSEC-2026-4320
+    "dnspython>=2.9.2",         # via pymongo: CVE-2026-114605, CVE-2026-128089
+    "joserfc>=1.7.6",           # CVE-2026-119283, CVE-2026-119284
+    "pyasn1>=0.6.5",            # CVE-2026-119194..119197
 ]
 
 [project.scripts]

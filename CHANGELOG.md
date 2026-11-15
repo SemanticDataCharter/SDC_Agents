@@ -55,6 +55,33 @@ aligned with SDC Generation 4.
     per row.
   - `mapping_confirm` refuses a bad `schema_ct_id` when the mapping is saved.
 
+- **`opentelemetry-api` 1.45.1 or later (CVE-2026-114603).** It comes in through `google-adk`,
+  and `google-adk` releases before 2.14.0 cap it at 1.42.1. The floors are now
+  `google-adk>=2.14.0` and `opentelemetry-api>=1.45.1`. The suite passes and every agent builds
+  on `google-adk` 2.14.1. Found by pip-audit in the 4.5.1 assessment's evidence bundle.
+- **Security floors for six runtime dependencies.** A pip-audit run on 2026-11-15 found
+  advisories published after the assessment. Each floor is the lowest release that fixes every
+  listed advisory:
+  - `pymongo>=4.18.3`
+  - `urllib3>=2.8.0`
+  - `certifi>=2026.10.18`
+  - `dnspython>=2.9.2`
+  - `joserfc>=1.7.6`
+  - `pyasn1>=0.6.5`
+
+  pip-audit of a clean install with no extras now reports no known vulnerabilities. Development
+  tools (`black`, `pip`, `setuptools`) aren't covered here.
+- **Failures are reported, not swallowed.** Bandit's four B110 hits in the same bundle were
+  `except Exception: pass` blocks:
+  - `introspect_sql_schema` primary-key, foreign-key and check-constraint lookups now catch only
+    "unavailable" errors (`NotImplementedError`, `SQLAlchemyError`), and add a line to a new
+    `warnings` list in the result.
+  - `introspect_mongodb` catches only `PyMongoError` when reading the collection validator, and
+    also reports in `warnings`.
+  - Any other error now surfaces instead of producing a quietly incomplete result.
+  - `list_destinations` adds an `error` field (the exception class only, since messages can echo
+    credentials) to an unreachable destination.
+
 ### Changed
 - **SQL Server, Snowflake, Databricks and other dialects need `read_only_role: true`.** They have
   no session read-only setting, so `introspect_sql` and `introspect_sql_schema` refuse them by

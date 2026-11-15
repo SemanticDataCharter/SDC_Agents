@@ -20,6 +20,8 @@ from typing import Optional
 
 from google.adk.tools import FunctionTool
 from google.adk.tools.base_toolset import BaseToolset
+from pymongo.errors import PyMongoError
+from sqlalchemy.exc import SQLAlchemyError
 
 from sdc_agents.common.audit import AuditLogger
 from sdc_agents.common.cache import CacheManager
@@ -650,6 +652,7 @@ class IntrospectToolset(BaseToolset):
 
             # Try to fetch JSON Schema validator for native metadata
             validator_schema: dict | None = None
+            warnings: list[str] = []
             try:
                 coll_info = await db.command("listCollections", filter={"name": coll_name})
                 first_batch = coll_info.get("cursor", {}).get("firstBatch", [])
@@ -657,8 +660,10 @@ class IntrospectToolset(BaseToolset):
                     options = first_batch[0].get("options", {})
                     validator = options.get("validator", {})
                     validator_schema = validator.get("$jsonSchema")
-            except Exception:
-                pass  # No validator — proceed with sampling only
+            except PyMongoError as exc:
+                # Often a missing listCollections privilege. Proceed with
+                # sampling only, and report that the validator wasn't read.
+                warnings.append(f"collection validator not read ({type(exc).__name__})")
 
             # Sample documents (read-only)
             cursor = coll.find().limit(sample_size)
@@ -760,6 +765,7 @@ class IntrospectToolset(BaseToolset):
             "collection": coll_name,
             "columns": fields,
             "row_count": doc_count,
+            "warnings": warnings,
         }
 
         # Write to introspection cache for downstream toolsets
@@ -963,19 +969,25 @@ class IntrospectToolset(BaseToolset):
         from sqlalchemy.ext.asyncio import create_async_engine
 
         engine = create_async_engine(ds.connection_string)
+        warnings: list[str] = []
         try:
 
             def _inspect_sync(conn):
                 inspector = sa_inspect(conn)
                 table_names = [table_name] if table_name else inspector.get_table_names()
                 tables = []
+                # Dialects without a catalog feature raise NotImplementedError;
+                # missing privileges surface as SQLAlchemyError. Either way the
+                # table is still introspected, and the gap is reported.
+                unavailable = (NotImplementedError, SQLAlchemyError)
                 for tbl in table_names:
                     # Get primary keys
                     try:
                         pk_info = inspector.get_pk_constraint(tbl)
                         pk_cols = set(pk_info.get("constrained_columns", []))
-                    except Exception:
+                    except unavailable as exc:
                         pk_cols = set()
+                        warnings.append(f"{tbl}: primary key unavailable ({type(exc).__name__})")
 
                     # Get foreign keys
                     fk_map: dict[str, str] = {}
@@ -986,8 +998,8 @@ class IntrospectToolset(BaseToolset):
                             for i, col_name in enumerate(fk.get("constrained_columns", [])):
                                 ref_col = ref_cols[i] if i < len(ref_cols) else ""
                                 fk_map[col_name] = f"{ref_table}.{ref_col}"
-                    except Exception:
-                        pass
+                    except unavailable as exc:
+                        warnings.append(f"{tbl}: foreign keys unavailable ({type(exc).__name__})")
 
                     # Get check constraints
                     check_map: dict[str, list[str]] = {}
@@ -998,8 +1010,10 @@ class IntrospectToolset(BaseToolset):
                             for col_info in inspector.get_columns(tbl):
                                 if col_info["name"] in sqltext:
                                     check_map.setdefault(col_info["name"], []).append(sqltext)
-                    except Exception:
-                        pass
+                    except unavailable as exc:
+                        warnings.append(
+                            f"{tbl}: check constraints unavailable ({type(exc).__name__})"
+                        )
 
                     # Get columns
                     columns = []
@@ -1075,6 +1089,7 @@ class IntrospectToolset(BaseToolset):
             "columns": all_columns,
             "row_count": 0,
             "tables": tables,
+            "warnings": warnings,
         }
 
         # Write to introspection cache for downstream toolsets

@@ -111,7 +111,7 @@ class _Scan:
     words: list[str] = field(default_factory=list)  # upper-cased bare words, in order
     calls: list[str] = field(default_factory=list)  # lower-cased bare words followed by "("
     semicolons: list[int] = field(default_factory=list)  # indexes into ``words`` at each ";"
-    first_token: str = ""  # first non-paren token, upper-cased
+    first_word: str = ""  # first non-paren token, upper-cased
 
 
 def _scan(sql: str, dialect: str) -> _Scan:
@@ -135,8 +135,8 @@ def _scan(sql: str, dialect: str) -> _Scan:
         if pending_word is None:
             return
         out.words.append(pending_word.upper())
-        if not out.first_token:
-            out.first_token = pending_word.upper()
+        if not out.first_word:
+            out.first_word = pending_word.upper()
         last_name = pending_word.lower()
         pending_word = None
 
@@ -184,8 +184,8 @@ def _scan(sql: str, dialect: str) -> _Scan:
                     continue
                 break
             flush_word()
-            if not out.first_token:
-                out.first_token = "<QUOTED>"
+            if not out.first_word:
+                out.first_word = "<QUOTED>"
             # A quoted identifier can name a function: "nextval"('s').
             last_name = sql[i + 1 : j].replace(c + c, c).lower() if c != "'" else None
             i = j + 1
@@ -219,8 +219,8 @@ def _scan(sql: str, dialect: str) -> _Scan:
             last_name = None
         if c == ";":
             out.semicolons.append(len(out.words))
-        elif c != "(" and not c.isspace() and not out.first_token:
-            out.first_token = c
+        elif c != "(" and not c.isspace() and not out.first_word:
+            out.first_word = c
         i += 1
 
     flush_word()
@@ -264,9 +264,9 @@ def check_read_only_query(query: str, dialect: str = "") -> None:
     if len(scan.semicolons) > 1 or (scan.semicolons and scan.semicolons[0] != len(scan.words)):
         raise PermissionError(f"{_REJECT_PREFIX} Multiple statements are not allowed.")
 
-    if scan.first_token not in _ALLOWED_FIRST:
+    if scan.first_word not in _ALLOWED_FIRST:
         raise PermissionError(
-            f"{_REJECT_PREFIX} Statement starts with '{scan.first_token or '?'}'. "
+            f"{_REJECT_PREFIX} Statement starts with '{scan.first_word or '?'}'. "
             f"Rejected query: {query[:100]}"
         )
 
