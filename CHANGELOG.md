@@ -14,6 +14,43 @@ aligned with SDC Generation 4.
 
 ---
 
+## [Unreleased]
+
+### Security
+- **`introspect_sql` is read-only by construction (High).** 4.5.1 checked only the start of the
+  statement against a list of write keywords. A leading comment, a CTE write, stacked statements,
+  `ATTACH` or `PRAGMA` got past that check. No write was committed only because the connection was
+  never committed. Now there are two layers, and the query is always rolled back:
+  - `sdc_agents.common.sql_guard` parses the statement and accepts one `SELECT` or
+    `WITH ... SELECT`. It rejects data-modifying keywords anywhere in the statement, and
+    side-effect functions. It refuses text that databases read differently rather than guessing.
+  - The connection is made read-only before the query runs: SQLite `query_only`, read-only
+    transactions on PostgreSQL and MySQL/MariaDB, and a statement timeout
+    (`query_timeout_seconds`, default 30). `introspect_sql_schema` uses the same read-only
+    connection.
+  - Dialects with no session read-only setting are refused unless the datasource sets
+    `read_only_role: true`.
+  - Checked against the bypass cases from the 4.5.1 assessment, on SQLite in the suite and on
+    PostgreSQL 17 by hand. With the parser disabled, the connection alone still refused every
+    write.
+- **Source values no longer reach the shared cache (High).** The introspection cache under
+  `.sdc-cache/introspections/` held the first five real values of each column. The Assembly
+  toolset, which makes network calls, reads the same cache root. The cache copy is now structure
+  only: names, types, counts and constraints, with `sample_values` emptied. The tool's return
+  value still carries the samples for the agent that asked.
+- **The audit log no longer stores source data.** At `log_level: verbose`, `introspect_sql` wrote
+  every result row and the other introspect tools wrote sample values to `audit.jsonl`, which by
+  default sits in the same cache tree. `introspect_sql` now logs the row count and column names
+  at every level. The other introspect tools log the structure-only result.
+
+### Changed
+- **SQL Server, Snowflake, Databricks and other dialects need `read_only_role: true`.** They have
+  no session read-only setting, so `introspect_sql` and `introspect_sql_schema` refuse them by
+  default.
+- **Some read-only queries are now refused.** These include an unquoted identifier that is a
+  forbidden keyword (quote it), `--comment` without a space, and a backslash before a closing
+  quote.
+
 ## [4.5.1] - 2026-10-25
 
 ### Security

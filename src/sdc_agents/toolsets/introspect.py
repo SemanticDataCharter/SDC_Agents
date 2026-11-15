@@ -1,12 +1,15 @@
 """Introspect Toolset — read-only datasource structure extraction.
 
 Provides SQL (SELECT-only), CSV, JSON, MongoDB, and BigQuery introspection tools.
-No network access, no file system writes.
+No network access. The only writes are to the local cache and audit log, and
+those hold structure (names, types, counts, constraints), never source values:
+the cache is shared with toolsets that do make network calls.
 """
 
 from __future__ import annotations
 
 import asyncio
+import copy
 import csv
 import io
 import json
@@ -21,12 +24,7 @@ from google.adk.tools.base_toolset import BaseToolset
 from sdc_agents.common.audit import AuditLogger
 from sdc_agents.common.cache import CacheManager
 from sdc_agents.common.config import SDCAgentsConfig
-
-# Regex to reject write operations — anchored to start of statement
-_WRITE_PATTERN = re.compile(
-    r"^\s*(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE|REPLACE|MERGE)\b",
-    re.IGNORECASE,
-)
+from sdc_agents.common.sql_guard import apply_read_only_session, check_read_only_query
 
 # Type inference patterns ordered by specificity
 _BOOL_VALUES = {"true", "false", "yes", "no", "1", "0", "t", "f", "y", "n"}
@@ -135,6 +133,36 @@ _SQL_TYPE_MAP = {
     "CIDR": "string",
     "MACADDR": "string",
 }
+
+
+def _structure_only(result: dict) -> dict:
+    """Copy of an introspection result with every ``sample_values`` list emptied.
+
+    This is what goes to the shared cache and the audit log. Raw values stay
+    in the tool's return value only.
+    """
+    safe = copy.deepcopy(result)
+
+    def _strip(obj):
+        if isinstance(obj, dict):
+            for key, value in obj.items():
+                if key == "sample_values":
+                    obj[key] = []
+                else:
+                    _strip(value)
+        elif isinstance(obj, list):
+            for item in obj:
+                _strip(item)
+
+    _strip(safe)
+    return safe
+
+
+def _sql_dialect(connection_string: str) -> str:
+    """SQLAlchemy backend name ("sqlite", "postgresql", ...) for a connection string."""
+    from sqlalchemy.engine import make_url
+
+    return make_url(connection_string).get_backend_name()
 
 
 def _sql_type_to_inferred(sql_type_str: str) -> str:
@@ -297,8 +325,11 @@ class IntrospectToolset(BaseToolset):
     async def introspect_sql(self, datasource_name: str, query: str) -> list[dict]:
         """Execute a read-only SQL query against a configured datasource.
 
-        Only SELECT statements are allowed. INSERT, UPDATE, DELETE, DROP,
-        ALTER, CREATE, TRUNCATE, REPLACE, and MERGE are rejected.
+        Only a single SELECT (or WITH ... SELECT) statement is allowed.
+        Stacked statements, data-modifying keywords anywhere in the query,
+        and side-effect functions are rejected. The query runs on a
+        read-only connection with a statement timeout and is always rolled
+        back.
 
         Args:
             datasource_name: Name of a configured SQL datasource (from config).
@@ -313,30 +344,36 @@ class IntrospectToolset(BaseToolset):
         if ds.type != "sql":
             raise ValueError(f"Datasource '{datasource_name}' is type '{ds.type}', not 'sql'")
 
-        # Enforce read-only
-        if _WRITE_PATTERN.match(query):
-            raise PermissionError(
-                f"Write operations are not allowed. Only SELECT queries are permitted. "
-                f"Rejected query: {query[:100]}"
-            )
+        # Layer 1: parse the statement; one read-only SELECT only.
+        dialect = _sql_dialect(ds.connection_string)
+        check_read_only_query(query, dialect)
 
         import sqlalchemy
         from sqlalchemy.ext.asyncio import create_async_engine
 
+        # Layer 2: the connection itself is read-only, then rolled back.
         engine = create_async_engine(ds.connection_string)
         try:
             async with engine.connect() as conn:
-                result = await conn.execute(sqlalchemy.text(query))
-                columns = list(result.keys())
-                rows = [dict(zip(columns, row)) for row in result.fetchall()]
+                try:
+                    await apply_read_only_session(
+                        conn, ds.query_timeout_seconds, ds.read_only_role
+                    )
+                    result = await conn.execute(sqlalchemy.text(query))
+                    columns = list(result.keys())
+                    rows = [dict(zip(columns, row)) for row in result.fetchall()]
+                finally:
+                    await conn.rollback()
         finally:
             await engine.dispose()
 
+        # The audit log lives in the shared cache tree: record the shape of
+        # the result, never the rows, whatever the log level.
         self._audit.log(
             agent="introspect",
             tool="introspect_sql",
             inputs={"datasource_name": datasource_name, "query": query},
-            outputs=rows,
+            outputs={"row_count": len(rows), "columns": columns},
             start_time=start,
         )
         return rows
@@ -426,13 +463,13 @@ class IntrospectToolset(BaseToolset):
 
         # Write to introspection cache for downstream toolsets
         cache_path = self._cache.introspection_path(datasource_name)
-        cache_path.write_text(json.dumps(result, indent=2, default=str))
+        cache_path.write_text(json.dumps(_structure_only(result), indent=2, default=str))
 
         self._audit.log(
             agent="introspect",
             tool="introspect_csv",
             inputs={"datasource_name": datasource_name, "max_rows": max_rows},
-            outputs=result,
+            outputs=_structure_only(result),
             start_time=start,
         )
         return result
@@ -553,13 +590,13 @@ class IntrospectToolset(BaseToolset):
 
         # Write to introspection cache for downstream toolsets
         cache_path = self._cache.introspection_path(datasource_name)
-        cache_path.write_text(json.dumps(result, indent=2, default=str))
+        cache_path.write_text(json.dumps(_structure_only(result), indent=2, default=str))
 
         self._audit.log(
             agent="introspect",
             tool="introspect_json",
             inputs={"datasource_name": datasource_name, "jsonpath": jp_expr},
-            outputs=result,
+            outputs=_structure_only(result),
             start_time=start,
         )
         return result
@@ -727,7 +764,7 @@ class IntrospectToolset(BaseToolset):
 
         # Write to introspection cache for downstream toolsets
         cache_path = self._cache.introspection_path(datasource_name)
-        cache_path.write_text(json.dumps(result, indent=2, default=str))
+        cache_path.write_text(json.dumps(_structure_only(result), indent=2, default=str))
 
         self._audit.log(
             agent="introspect",
@@ -737,7 +774,7 @@ class IntrospectToolset(BaseToolset):
                 "collection": coll_name,
                 "sample_size": sample_size,
             },
-            outputs=result,
+            outputs=_structure_only(result),
             start_time=start,
         )
         return result
@@ -881,7 +918,7 @@ class IntrospectToolset(BaseToolset):
 
         # Write to introspection cache for downstream toolsets
         cache_path = self._cache.introspection_path(datasource_name)
-        cache_path.write_text(json.dumps(result, indent=2, default=str))
+        cache_path.write_text(json.dumps(_structure_only(result), indent=2, default=str))
 
         self._audit.log(
             agent="introspect",
@@ -892,7 +929,7 @@ class IntrospectToolset(BaseToolset):
                 "table": table,
                 "max_rows": max_rows,
             },
-            outputs=result,
+            outputs=_structure_only(result),
             start_time=start,
         )
         return result
@@ -1015,7 +1052,13 @@ class IntrospectToolset(BaseToolset):
                 return tables
 
             async with engine.connect() as conn:
-                tables = await conn.run_sync(_inspect_sync)
+                try:
+                    await apply_read_only_session(
+                        conn, ds.query_timeout_seconds, ds.read_only_role
+                    )
+                    tables = await conn.run_sync(_inspect_sync)
+                finally:
+                    await conn.rollback()
         finally:
             await engine.dispose()
 
@@ -1036,13 +1079,13 @@ class IntrospectToolset(BaseToolset):
 
         # Write to introspection cache for downstream toolsets
         cache_path = self._cache.introspection_path(datasource_name)
-        cache_path.write_text(json.dumps(result, indent=2, default=str))
+        cache_path.write_text(json.dumps(_structure_only(result), indent=2, default=str))
 
         self._audit.log(
             agent="introspect",
             tool="introspect_sql_schema",
             inputs={"datasource_name": datasource_name, "table_name": table_name},
-            outputs=result,
+            outputs=_structure_only(result),
             start_time=start,
         )
         return result
