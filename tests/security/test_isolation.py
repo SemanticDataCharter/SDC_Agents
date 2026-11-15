@@ -376,6 +376,7 @@ async def test_validation_rejects_relative_traversal(security_config):
 # --- Distribution path confinement ---
 
 
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
 async def test_distribution_rejects_outside_path(security_config):
     """Distribution rejects package paths outside output directory."""
     transport = httpx.MockTransport(lambda r: httpx.Response(200, json={}))
@@ -386,6 +387,7 @@ async def test_distribution_rejects_outside_path(security_config):
         await toolset.inspect_package("/etc/passwd")
 
 
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
 async def test_distribution_rejects_traversal(security_config):
     """Distribution rejects path traversal attacks."""
     transport = httpx.MockTransport(lambda r: httpx.Response(200, json={}))

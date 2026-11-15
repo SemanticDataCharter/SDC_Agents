@@ -151,7 +151,7 @@ sdc_agents/
 │   ├── introspect/       # Introspect Agent (datasource structure)
 │   ├── mapping/          # Mapping Agent (column-to-component)
 │   ├── generator/        # Generator Agent (XML instance production)
-│   ├── validation/       # Validation Agent (VaaS API)
+│   ├── validation/       # Validation Agent (local sdcvalidator; VSL settlement)
 │   └── distribution/     # Distribution Agent (artifact routing)
 ├── common/
 │   ├── audit.py          # Shared audit log library

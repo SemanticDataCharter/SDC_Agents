@@ -14,6 +14,13 @@ from tests.fixtures.distribution_fixtures import (
     make_package_zip,
 )
 
+# The package tools are deprecated and warn on every call; the tests of their
+# behaviour below don't need to see it. The deprecation tests at the end of
+# this module check the warning itself with pytest.warns.
+pytestmark = pytest.mark.filterwarnings(
+    "ignore:.*is deprecated and will be removed:DeprecationWarning"
+)
+
 
 @pytest.fixture
 def dist_config(tmp_path: Path) -> SDCAgentsConfig:
@@ -412,3 +419,71 @@ async def test_distribution_exposes_exactly_5_tools(dist_config):
         "distribute_batch",
         "bootstrap_triplestore",
     }
+
+
+# --- Deprecation of the package tools (removal planned for 4.7.0) ---
+
+
+@pytest.mark.parametrize("tool", ["inspect_package", "distribute_package"])
+async def test_package_tools_warn_and_report_deprecation(dist_config, sample_package, tool):
+    """Each deprecated package tool warns and says so in its result."""
+    from sdc_agents.toolsets.distribution import DistributionToolset
+
+    client = httpx.AsyncClient(transport=_mock_transport())
+    toolset = DistributionToolset(config=dist_config, http_client=client)
+
+    with pytest.warns(DeprecationWarning, match=f"{tool} is deprecated.*4\\.7\\.0"):
+        result = await getattr(toolset, tool)(str(sample_package))
+    assert result["deprecated"].startswith(f"{tool} is deprecated")
+    assert "bootstrap_triplestore" in result["deprecated"]
+
+
+async def test_distribute_batch_warns_once(dist_config, sample_package):
+    """distribute_batch warns once for the batch, not once per package."""
+    import warnings
+
+    from sdc_agents.toolsets.distribution import DistributionToolset
+
+    output_dir = Path(dist_config.output.directory)
+    (output_dir / "second.pkg.zip").write_bytes(make_package_zip())
+    client = httpx.AsyncClient(transport=_mock_transport())
+    toolset = DistributionToolset(config=dist_config, http_client=client)
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        result = await toolset.distribute_batch()
+
+    deprecations = [w for w in caught if issubclass(w.category, DeprecationWarning)]
+    assert len(deprecations) == 1
+    assert "distribute_batch is deprecated" in str(deprecations[0].message)
+    assert result["count"] == 2
+    assert result["deprecated"].startswith("distribute_batch is deprecated")
+
+
+async def test_supported_tools_do_not_warn(dist_config):
+    """bootstrap_triplestore and list_destinations are not deprecated."""
+    import warnings
+
+    from sdc_agents.toolsets.distribution import DistributionToolset
+
+    ont_dir = Path(dist_config.cache.root) / "ontologies"
+    ont_dir.mkdir(parents=True, exist_ok=True)
+    (ont_dir / "sdc4.ttl").write_text("@prefix sdc4: <https://semanticdatacharter.com/ns/sdc4/> .")
+    client = httpx.AsyncClient(transport=_mock_transport())
+    toolset = DistributionToolset(config=dist_config, http_client=client)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        destinations = await toolset.list_destinations()
+        boot = await toolset.bootstrap_triplestore()
+
+    assert all("deprecated" not in d for d in destinations)
+    assert "deprecated" not in boot
+    assert boot["graphs_loaded"][0]["status"] == "loaded"
+
+
+def test_deprecated_tool_set_matches_registered_tools():
+    """DEPRECATED_TOOLS names only tools the toolset still registers."""
+    from sdc_agents.toolsets.distribution import DEPRECATED_TOOLS
+
+    assert DEPRECATED_TOOLS == {"inspect_package", "distribute_package", "distribute_batch"}

@@ -1,6 +1,8 @@
 # Agent & Tool Reference
 
-SDC Agents provides 32 tools across 9 agents. Each agent is an ADK `LlmAgent` with a scoped `BaseToolset`.
+SDC Agents provides 35 tools across 9 agents. Each agent is an ADK `LlmAgent` with a scoped `BaseToolset`.
+
+The agents are **design-time** tools for building models in SDCStudio. Introspect, Knowledge, Semantic Discovery, Catalog, Mapping and Assembly do the design work. Generator and Validation produce and check **sample records for testing a model**. They are not an operational ingest path: in production, data reaches Governed Data Records through the app stack or Supabase kit SDCStudio generates from a published model (see the [README](../../README.md#what-is-sdc-agents)).
 
 ---
 
@@ -9,14 +11,14 @@ SDC Agents provides 32 tools across 9 agents. Each agent is an ADK `LlmAgent` wi
 | Agent | Tools | Network Access | Datasource Access |
 |---|---|---|---|
 | **Assembly** | 4 | HTTPS (Assembly API) | None |
-| **Catalog** | 5 | HTTPS (SDCStudio API) | None |
-| **Distribution** | 5 | Customer destinations | None |
+| **Catalog** | 7 | HTTPS (SDCStudio API) | None |
+| **Distribution** | 5 (3 deprecated) | Configured destinations | None |
 | **Generator** | 3 | None | Read-only (CSV/JSON) |
-| **Introspect** | 5 | None | Read-only |
+| **Introspect** | 6 | None | Read-only |
 | **Knowledge** | 3 | None | Read-only (files) |
 | **Mapping** | 3 | None | None (cache only) |
 | **Semantic Discovery** | 1 | GCP (Vertex AI Search) | None (ADK-only) |
-| **Validation** | 3 | HTTPS (VaaS API, token auth) | None |
+| **Validation** | 3 | HTTPS (public catalog for schemas; settlement, token auth) | None |
 
 ---
 
@@ -321,7 +323,9 @@ List all saved mapping configurations from cache.
 
 ## Generator Agent
 
-Produces SDC4 XML instances by substituting datasource values into skeleton XML templates using field mappings.
+Produces **sample** SDC4 XML records for testing a published model, by substituting datasource values into the model's skeleton XML using field mappings.
+
+**Limits.** Records come from a **CSV or JSON file** datasource, or from a `record` dict passed in directly; SQL, MongoDB and BigQuery datasources are refused. Each record re-reads and re-parses the whole file (a JSONPath, if configured, is re-evaluated each time), so `generate_batch` over *n* rows reads the file *n* times. Use it for a handful of test records, not for loading data.
 
 **Security:** files are written only inside `output.directory`. Mapping names and the mapping's `schema_ct_id` must be single names, with no path separators, colons or leading `..`, or the call raises `PermissionError`. The output path must resolve inside the output directory after following symlinks. `generate_batch` stops at the first refusal rather than recording it once per row. The same name check applies to every name used to build a cache path.
 
@@ -392,66 +396,57 @@ Preview an XML instance without writing to disk.
 
 ## Validation Agent
 
-Validates and signs XML instances via the SDCStudio VaaS API. Requires an API token (`sdcstudio.api_key`). File paths are confined to the configured output directory.
+Validates sample records **locally** with [sdcvalidator](https://pypi.org/project/sdcvalidator/) against the model's published XSD 1.1 schema. The instance's own `dm-<ct_id>` names the schema, which is read from the cache or fetched once from the public catalog; validation needs no API key and costs nothing. `settle_instance` is the one authenticated, charged call. File paths are confined to the configured output directory.
 
 ### `validate_instance`
 
-Validate an XML instance against its schema via the VaaS API.
+Validate one XML instance against its published schema.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `xml_path` | str | Yes | — | Path to XML file (must be within output directory) |
-| `mode` | str | No | `recover` | Validation mode: `strict` or `recover` |
-| `package` | bool | No | `false` | Request an artifact package (.pkg.zip) alongside validation |
+| `schema_path` | str | No | `""` | XSD to use instead of the one the instance names |
+| `mode` | str | No | `strict` | `strict` reports; `recover` also writes `<name>.recovered.xml`, flagging each invalid value with an ExceptionalValue |
 
 **Returns:**
 
 ```json
 {
-  "valid": true,
-  "mode": "recover",
-  "schema": {"ct_id": "abc123", "title": "Lab Results"},
+  "valid": false,
+  "mode": "strict",
+  "schema": {"ct_id": "abc123", "path": ".sdc-cache/schemas/dm-abc123.xsd"},
   "structural_errors": 0,
-  "semantic_errors": 0,
-  "recovered": false,
-  "errors": []
+  "semantic_errors": 1,
+  "errors": [{"tier": "semantic", "path": "...", "reason": "..."}],
+  "recovered": false
 }
 ```
 
-May include `recovered_path` and/or `package_path`.
+In `recover` mode, when there are semantic errors only, it adds `recovered_path` and `recovered_valid`.
 
-### `sign_instance`
+### `settle_instance`
 
-Sign a validated XML instance via the VaaS API.
+Settle one exchange on the Verifiable Settlement Layer (`POST /api/v1/vsl/settle`): the layer validates the record, decides the proposed workflow transition with the model's governance, and signs a Settlement Receipt, written beside the record as `<name>.receipt.json`. Needs `sdcstudio.api_key`; costs 1,000 credits.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `xml_path` | str | Yes | — | Path to XML file (must be within output directory) |
-| `recover` | bool | No | `true` | Attempt recovery before signing |
-| `package` | bool | No | `false` | Request an artifact package |
+| `target_state` | str | Yes | — | Workflow state the exchange moves the record to |
+| `condition` | dict | Yes | — | Release condition; hashed into the receipt, never stored |
+| `parties` | list[str] | Yes | — | At least two key identifiers (`https://` or `did:web:`) |
+| `previous_receipt_id` | str | No | `""` | Prior receipt in the chain |
 
-**Returns:**
-
-```json
-{
-  "valid": true,
-  "signed": true,
-  "signature": {"algorithm": "...", "value": "..."},
-  "verification": {"verified": true}
-}
-```
-
-May include `signed_path` and/or `package_path`.
+**Returns:** `settled`, `receipt_id`, `receipt_path`, `receipt`, `governance`, `verification`, `charged_credits`. Raises `InsufficientFundsError` on HTTP 402.
 
 ### `validate_batch`
 
-Validate (and optionally sign) all XML instances in a directory.
+Validate every `*.xml` in a directory (skipping `*.recovered.xml`), locally.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `xml_dir` | str | No | output directory | Directory containing XML files |
-| `sign` | bool | No | `false` | Sign valid instances after validation |
-| `package` | bool | No | `true` | Request artifact packages |
+| `schema_path` | str | No | `""` | XSD for every file; otherwise each instance names its own model |
+| `mode` | str | No | `strict` | `strict` or `recover`, as for `validate_instance` |
 
 **Returns:**
 
@@ -459,7 +454,7 @@ Validate (and optionally sign) all XML instances in a directory.
 {
   "count": 10,
   "results": [
-    {"xml_path": "...", "valid": true, "signed": false, "errors": []}
+    {"xml_path": "...", "valid": true, "errors": []}
   ],
   "failed": 0
 }
@@ -469,9 +464,11 @@ Validate (and optionally sign) all XML instances in a directory.
 
 ## Distribution Agent
 
-Routes artifact packages (`.pkg.zip`) to configured destinations: triplestores (Fuseki/GraphDB), graph databases (Neo4j HTTP API), REST APIs, and filesystem paths.
+Loads the SDC4 reference ontologies and a model's schema RDF into a development triplestore (Fuseki or GraphDB) with `bootstrap_triplestore`, and checks configured destinations with `list_destinations`.
 
-### `inspect_package`
+> **Deprecated, removal planned for 4.7.0:** `inspect_package`, `distribute_package` and `distribute_batch`. They route artifact packages (`.pkg.zip`) that the validation service (VaaS) used to build. SDCStudio retired that service, and 4.5.0 removed the code that called it, so nothing produces these packages any more. The tools still work on a package you already have; each call raises a `DeprecationWarning` and adds a `deprecated` notice to its result.
+
+### `inspect_package` (deprecated)
 
 Inspect a `.pkg.zip` artifact package without distributing it.
 
@@ -488,7 +485,8 @@ Inspect a `.pkg.zip` artifact package without distributing it.
   "artifacts": [
     {"type": "rdf", "filename": "abc123.ttl", "destination": "triplestore", "size_bytes": 4096}
   ],
-  "manifest": {"..."}
+  "manifest": {"..."},
+  "deprecated": "inspect_package is deprecated and will be removed in sdc-agents 4.7.0. ..."
 }
 ```
 
@@ -507,7 +505,7 @@ List configured destinations with connectivity status.
 ]
 ```
 
-### `distribute_package`
+### `distribute_package` (deprecated)
 
 Distribute all artifacts from a `.pkg.zip` to their configured destinations.
 
@@ -524,11 +522,12 @@ Distribute all artifacts from a `.pkg.zip` to their configured destinations.
   "artifacts_distributed": 3,
   "results": [
     {"artifact": "abc123.ttl", "destination": "triplestore", "status": "delivered"}
-  ]
+  ],
+  "deprecated": "distribute_package is deprecated and will be removed in sdc-agents 4.7.0. ..."
 }
 ```
 
-### `distribute_batch`
+### `distribute_batch` (deprecated)
 
 Distribute all `.pkg.zip` packages in a directory.
 
@@ -544,18 +543,19 @@ Distribute all `.pkg.zip` packages in a directory.
   "results": [
     {"package_path": "...", "artifacts_distributed": 3, "errors": []}
   ],
-  "failed": 0
+  "failed": 0,
+  "deprecated": "distribute_batch is deprecated and will be removed in sdc-agents 4.7.0. ..."
 }
 ```
 
 ### `bootstrap_triplestore`
 
-Bootstrap a triplestore with SDC4 ontologies and schema RDF. Idempotent — checks for existing named graphs before uploading.
+Bootstrap a triplestore with SDC4 ontologies and schema RDF. Idempotent — checks for existing named graphs before uploading. Uses the first `fuseki` or `graphdb` destination in the config. Loads every `*.rdf` and `*.ttl` in `.sdc-cache/ontologies/` and, with `ct_id`, `.sdc-cache/schemas/dm-<ct_id>.ttl`. `catalog_download_ontologies` and `catalog_download_schema_rdf` return that content but do not write these files, so save it there first.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `ct_id` | str | No | `null` | Schema `ct_id` to load as a named graph |
-| `include_third_party` | bool | No | `true` | Load third-party ontologies from cache |
+| `include_third_party` | bool | No | `true` | Recorded in the audit log; currently has no effect (every cached ontology is loaded) |
 
 **Returns:**
 
@@ -707,8 +707,11 @@ Assemble a data model by calling the SDCStudio Assembly API. Fail-closed: the en
 | `title` | str | Yes | — | Title for the new data model |
 | `description` | str | Yes | — | Description of the data model |
 | `assembly_tree` | dict | Yes | — | Complete assembly tree with hierarchy and components |
+| `contextual` | dict | No | `null` | Contextual component refs (audit, attestation, party, ...) |
 
-**Returns:**
+The Assembly API **publishes** the model (decision D4 in [COMPONENT_ASSEMBLY_DESIGN.md](../dev/COMPONENT_ASSEMBLY_DESIGN.md)); it is not a draft. When every component is reused by `ct_id`, the call returns the published model (`mode: "sync"`). When some components must be created (mint refs), SDCStudio answers HTTP 202 and finishes in the background: the result is `{mode: "async", status: "processing", task_id, data_source_ct_id, estimated_cost, new_components}`.
+
+**Returns (sync):**
 
 ```json
 {

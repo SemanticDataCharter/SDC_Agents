@@ -1,14 +1,23 @@
-"""Distribution Toolset — route artifact packages to customer destinations.
+"""Distribution Toolset — load reference RDF into a dev triplestore.
 
-Delivers validated artifact packages (.pkg.zip) to triplestores (Fuseki/GraphDB),
-graph databases (Neo4j HTTP API), REST APIs, and filesystem destinations.
-All connectors use httpx — no driver-specific dependencies.
+``bootstrap_triplestore`` loads the cached SDC4 ontologies and a model's
+schema RDF into a Fuseki or GraphDB destination, and ``list_destinations``
+checks that configured destinations answer. All connectors use httpx — no
+driver-specific dependencies.
+
+Deprecated; removal planned for 4.7.0: ``inspect_package``,
+``distribute_package`` and ``distribute_batch``. They route artifact packages
+(``.pkg.zip``) that the validation service (VaaS) used to build; SDCStudio
+retired that service and 4.5.0 removed the code that called it, so nothing
+produces these packages any more. They still work on a package you already
+have, and warn on every call.
 """
 
 from __future__ import annotations
 
 import json
 import time
+import warnings
 import zipfile
 from io import BytesIO
 from pathlib import Path
@@ -22,12 +31,31 @@ from sdc_agents.common.audit import AuditLogger
 from sdc_agents.common.cache import CacheManager
 from sdc_agents.common.config import SDCAgentsConfig
 
+#: Tools kept for one minor version with a warning. Removal planned for 4.7.0.
+DEPRECATED_TOOLS = frozenset({"inspect_package", "distribute_package", "distribute_batch"})
+
+_DEPRECATION_NOTICE = (
+    "{tool} is deprecated and will be removed in sdc-agents 4.7.0. "
+    "It reads .pkg.zip artifact packages, which nothing produces since the "
+    "validation service (VaaS) was retired. bootstrap_triplestore and "
+    "list_destinations are unaffected."
+)
+
+
+def _deprecated(tool: str) -> str:
+    """Warn that ``tool`` is deprecated and return the notice for its result."""
+    notice = _DEPRECATION_NOTICE.format(tool=tool)
+    warnings.warn(notice, DeprecationWarning, stacklevel=3)
+    return notice
+
 
 class DistributionToolset(BaseToolset):
-    """Scoped toolset for distributing SDC4 artifact packages.
+    """Scoped toolset for configured destinations.
 
-    Routes artifacts from .pkg.zip packages to configured destinations
-    (triplestores, graph databases, REST APIs, filesystem).
+    Bootstraps a triplestore with SDC4 ontologies and schema RDF, and checks
+    destination connectivity. The package tools (``inspect_package``,
+    ``distribute_package``, ``distribute_batch``) are deprecated: see the
+    module docstring.
     """
 
     def __init__(
@@ -209,16 +237,20 @@ class DistributionToolset(BaseToolset):
     # --- Tools ---
 
     async def inspect_package(self, package_path: str) -> dict:
-        """Inspect a .pkg.zip artifact package without distributing it.
+        """Deprecated: inspect a .pkg.zip artifact package without distributing it.
+
+        Deprecated; removal planned for 4.7.0: nothing produces
+        .pkg.zip packages since the validation service was retired.
 
         Args:
             package_path: Path to the .pkg.zip file (must be within output directory).
 
         Returns:
             Dict with ct_id, instance_id, artifacts list (type, filename, size_bytes),
-            and the full manifest.
+            the full manifest, and a ``deprecated`` notice.
         """
         start = time.monotonic()
+        notice = _deprecated("inspect_package")
 
         resolved = self._check_path(package_path)
         manifest, zf = self._read_package(resolved)
@@ -246,6 +278,7 @@ class DistributionToolset(BaseToolset):
             "instance_id": manifest.get("instance_id"),
             "artifacts": artifacts,
             "manifest": manifest,
+            "deprecated": notice,
         }
 
         self._audit.log(
@@ -317,16 +350,20 @@ class DistributionToolset(BaseToolset):
         return results
 
     async def distribute_package(self, package_path: str) -> dict:
-        """Distribute all artifacts from a .pkg.zip to their configured destinations.
+        """Deprecated: distribute the artifacts of a .pkg.zip to their destinations.
+
+        Deprecated; removal planned for 4.7.0: nothing produces
+        .pkg.zip packages since the validation service was retired.
 
         Args:
             package_path: Path to the .pkg.zip file (must be within output directory).
 
         Returns:
             Dict with package_path, ct_id, artifacts_distributed count, and
-            per-artifact results.
+            per-artifact results, and a ``deprecated`` notice.
         """
         start = time.monotonic()
+        notice = _deprecated("distribute_package")
 
         resolved = self._check_path(package_path)
         manifest, zf = self._read_package(resolved)
@@ -416,6 +453,7 @@ class DistributionToolset(BaseToolset):
             "ct_id": ct_id,
             "artifacts_distributed": distributed,
             "results": per_artifact_results,
+            "deprecated": notice,
         }
 
         self._audit.log(
@@ -428,15 +466,20 @@ class DistributionToolset(BaseToolset):
         return result
 
     async def distribute_batch(self, package_dir: Optional[str] = None) -> dict:
-        """Distribute all .pkg.zip packages in a directory.
+        """Deprecated: distribute every .pkg.zip package in a directory.
+
+        Deprecated; removal planned for 4.7.0: nothing produces
+        .pkg.zip packages since the validation service was retired.
 
         Args:
             package_dir: Directory containing .pkg.zip files. Defaults to output directory.
 
         Returns:
-            Dict with count, per-package results, and failed count.
+            Dict with count, per-package results, failed count, and a
+            ``deprecated`` notice.
         """
         start = time.monotonic()
+        notice = _deprecated("distribute_batch")
 
         if package_dir:
             dir_path = self._check_path(package_dir)
@@ -449,7 +492,10 @@ class DistributionToolset(BaseToolset):
 
         for pkg in packages:
             try:
-                r = await self.distribute_package(str(pkg))
+                # One warning for the batch, not one per package.
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", DeprecationWarning)
+                    r = await self.distribute_package(str(pkg))
                 results.append(
                     {
                         "package_path": str(pkg),
@@ -473,6 +519,7 @@ class DistributionToolset(BaseToolset):
             "count": len(results),
             "results": results,
             "failed": failed,
+            "deprecated": notice,
         }
 
         self._audit.log(

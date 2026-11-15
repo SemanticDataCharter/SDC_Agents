@@ -1,10 +1,14 @@
 # SDC Agents — Semantic Data Governance for ADK
 
-**Turn raw data access into semantically validated, self-describing data.**
+**Build SDC4 data models from the data sources you already have.**
 
 SDC Agents bridges ADK data tools (BigQuery, SQL, CSV) and the
-[SDCStudio](https://sdcstudio.com) platform — adding schema governance,
-validation, and knowledge graph generation to your agent pipelines.
+[SDCStudio](https://sdcstudio.com) platform at **design time**: introspect a
+source's structure, find reusable published components, and assemble and
+publish a data model through SDCStudio's Assembly API. The generator and
+validator produce sample records for testing a model. They are not an
+operational ingest path: live data reaches Governed Data Records through the
+app stack or Supabase kit SDCStudio generates from the published model.
 
 ## Available Toolsets
 
@@ -13,16 +17,16 @@ validation, and knowledge graph generation to your agent pipelines.
 | **IntrospectToolset** | Analyze datasource structure — infer column types and constraints from SQL, CSV, JSON, MongoDB, or BigQuery |
 | **CatalogToolset** | Discover published SDC4 schemas, download artifacts (XSD, RDF, JSON-LD), check wallet balance |
 | **MappingToolset** | Match datasource columns to schema components by type compatibility and name similarity |
-| **AssemblyToolset** | Compose data models from catalog components — reuse existing or mint new, with wallet billing |
-| **GeneratorToolset** | Generate validated XML instances, batch processing, and preview |
-| **ValidationToolset** | Validate XML instances locally against their published schemas; settle an exchange on the Verifiable Settlement Layer |
-| **DistributionToolset** | Deliver RDF triples to Fuseki, Neo4j, GraphDB, or REST endpoints |
+| **AssemblyToolset** | Compose and publish data models from catalog components — reuse existing or mint new, with wallet billing |
+| **GeneratorToolset** | Sample XML records for testing a model, from CSV or JSON files (re-reads the file for each row) |
+| **ValidationToolset** | Validate sample records locally against their published schemas; settle an exchange on the Verifiable Settlement Layer |
+| **DistributionToolset** | Load SDC4 ontologies and schema RDF into a development Fuseki or GraphDB triplestore (package delivery tools deprecated) |
 | **KnowledgeToolset** | Index domain documentation (JSON, CSV, TTL, Markdown, PDF, DOCX) for semantic search |
 
 ## Quick Example
 
-Introspect a BigQuery table, discover matching schemas, and generate
-validated instances — all in one agent:
+Introspect a BigQuery table, discover matching schemas, and map its columns
+to schema components:
 
 ```python
 from google.adk.agents import LlmAgent
@@ -63,7 +67,7 @@ agent = LlmAgent(
 pip install sdc-agents
 ```
 
-Requires Python 3.11+ and `google-adk >= 1.25`.
+Requires Python 3.11+ and `google-adk >= 1.28.1` (the floor set by CVE-2026-4810).
 
 ## Configuration
 
@@ -104,15 +108,17 @@ sdc-agents serve --mcp introspect
 sdc-agents serve --mcp validation
 ```
 
-## What SDC4 Adds to Your Pipeline
+## What SDC Agents Add at Design Time
 
-| Without SDC4 | With SDC Agents |
+| Without SDC Agents | With SDC Agents |
 |---|---|
-| Raw query results | Self-describing XML instances with embedded schema references |
-| Ad-hoc column names | Components mapped to published, immutable schemas (CUID2-identified) |
-| No validation | Structural + semantic validation via VaaS |
-| Siloed datasets | RDF triples in a knowledge graph with cross-domain type bridging |
-| Manual documentation | Auto-generated XSD, HTML, JSON-LD, SHACL, GQL artifacts |
+| Hand-studying source schemas | Introspected structure, types and constraints, cached without row values |
+| Ad-hoc column names | Columns matched to published, immutable components (CUID2-identified) |
+| Building every model from scratch | Reusable catalog components found first; only the rest are minted |
+| Manual model assembly | A Cluster hierarchy proposed and published through the Assembly API |
+| Guessing whether a model fits | Sample records generated and validated locally against the published XSD |
+
+Once published, a model's XSD, RDF, JSON-LD, SHACL and GQL artifacts come from SDCStudio, and so do the generated app stacks and Supabase kits that carry operational data.
 
 ## Resources
 

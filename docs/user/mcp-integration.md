@@ -175,11 +175,10 @@ Which agents to configure for common workflows:
 | Browse published schemas | `catalog` |
 | Explore a datasource | `introspect` |
 | Map columns to schema components | `catalog` + `introspect` + `mapping` |
-| Generate XML from CSV | `catalog` + `introspect` + `mapping` + `generator` |
-| Full pipeline (generate + validate + distribute) | All 8 MCP agents (+ semantic_discovery ADK-only) |
+| Build and publish a model from a datasource | `introspect` + `catalog` + `assembly` (+ `knowledge`, `mapping`) |
+| Sample records for testing a model (CSV/JSON) | `catalog` + `mapping` + `generator` + `validation` |
 | Validate existing XML files | `validation` |
-| Distribute existing packages | `distribution` |
-| Bootstrap a triplestore | `catalog` + `distribution` |
+| Bootstrap a development triplestore | `catalog` + `distribution` |
 
 ---
 
@@ -189,12 +188,12 @@ When you connect an MCP server, the client sees only that agent's tools:
 
 | MCP Server | Tools Exposed |
 |---|---|
-| `sdc-catalog` | `catalog_list_schemas`, `catalog_get_schema`, `catalog_download_schema_rdf`, `catalog_download_skeleton`, `catalog_download_ontologies` |
-| `sdc-introspect` | `introspect_sql`, `introspect_csv`, `introspect_json`, `introspect_mongodb`, `introspect_bigquery` |
+| `sdc-catalog` | `catalog_list_schemas`, `catalog_get_schema`, `catalog_download_schema_rdf`, `catalog_download_schema_xsd`, `catalog_download_skeleton`, `catalog_download_ontologies`, `catalog_check_wallet` |
+| `sdc-introspect` | `introspect_sql`, `introspect_sql_schema`, `introspect_csv`, `introspect_json`, `introspect_mongodb`, `introspect_bigquery` |
 | `sdc-mapping` | `mapping_suggest`, `mapping_confirm`, `mapping_list` |
 | `sdc-generator` | `generate_instance`, `generate_batch`, `generate_preview` |
-| `sdc-validation` | `validate_instance`, `sign_instance`, `validate_batch` |
-| `sdc-distribution` | `inspect_package`, `list_destinations`, `distribute_package`, `distribute_batch`, `bootstrap_triplestore` |
+| `sdc-validation` | `validate_instance`, `settle_instance`, `validate_batch` |
+| `sdc-distribution` | `bootstrap_triplestore`, `list_destinations`; deprecated (removal planned for 4.7.0): `inspect_package`, `distribute_package`, `distribute_batch` |
 | `sdc-knowledge` | `ingest_knowledge_source`, `query_knowledge`, `list_indexed_sources` |
 | `sdc-assembly` | `discover_components`, `propose_cluster_hierarchy`, `select_contextual_components`, `assemble_model` |
 | *(Semantic Discovery)* | `vertex_ai_search` — **ADK-only**, not available via MCP |
@@ -257,11 +256,12 @@ With this configuration, a typical session might look like:
 
 1. Use Snowflake's `SYSTEM_EXECUTE_SQL` tool to explore table structure
 2. Use SDC Agents' `catalog_list_schemas` to find a matching SDC4 schema
-3. Use `introspect_sql` (pointing at Snowflake via SQLAlchemy) to extract column metadata
-4. Use `mapping_suggest` and `mapping_confirm` to map columns to schema components
-5. Use `generate_batch` to produce XML instances
-6. Use `validate_batch` to validate and sign
-7. Use `distribute_batch` to deliver to destinations
+3. Use `introspect_sql_schema` (pointing at Snowflake via SQLAlchemy) to extract column metadata
+4. Use `discover_components` and `propose_cluster_hierarchy` to find reusable components and arrange them
+5. Use `assemble_model` to have SDCStudio create any new components and publish the model
+6. Optionally, export a few sample rows to CSV and use `generate_batch` and `validate_batch` to test the model (the generator does not read SQL)
+
+Loading the platform's live data into Governed Data Records is a job for the app stack or Supabase kit SDCStudio generates from the published model, not for SDC Agents.
 
 ### Claude Desktop: SDC Agents + Databricks
 
@@ -357,16 +357,16 @@ MCP clients (Claude Desktop, Cursor, Claude Code) manage each server as an indep
 |---|---|---|
 | Snowflake MCP | `CORTEX_ANALYST_MESSAGE`, `SYSTEM_EXECUTE_SQL`, ... | Query and explore Snowflake data |
 | Databricks MCP | Unity Catalog functions, Genie, DBSQL, Vector Search | Query and explore Databricks data |
-| SDC Agents (6 servers) | `catalog_*`, `introspect_*`, `mapping_*`, `generate_*`, `validate_*`, `distribute_*`, ... | Semantic modeling, validation, distribution |
+| SDC Agents (8 servers) | `catalog_*`, `introspect_*`, `mapping_*`, `discover_components`, `assemble_model`, `generate_*`, `validate_*`, ... | Model design, sample records for testing |
 
-The platform MCP servers handle data access and exploration. SDC Agents handles everything after: schema discovery, column mapping, XML generation, validation, signing, and multi-destination distribution.
+The platform MCP servers handle data access and exploration. SDC Agents handles model design: schema discovery, column mapping, component discovery and assembly of a published model, plus sample records for testing it.
 
 ### Two Paths for Data Access
 
-When using SDC Agents alongside a platform MCP server, you have two ways to get data into the pipeline:
+When using SDC Agents alongside a platform MCP server, you have two ways to read a source's structure:
 
 1. **Direct via `introspect_sql`** — Configure the platform as a `sql` datasource in `sdc-agents.yaml` (see [Cloud Data Platforms](configuration.md#cloud-data-platforms)). The Introspect Agent queries the platform directly through SQLAlchemy.
 
-2. **Platform MCP for exploration, SDC Agents for modeling** — Use the platform's MCP tools to explore and understand your data interactively, then use SDC Agents' tools to build the formal SDC4 artifacts. This is useful when you need the platform's specialized capabilities (Genie NL-to-SQL, Cortex Search, Vector Search) before committing to a mapping.
+2. **Platform MCP for exploration, SDC Agents for modeling** — Use the platform's MCP tools to explore and understand your data interactively, then use SDC Agents' tools to build the SDC4 model. This is useful when you need the platform's specialized capabilities (Genie NL-to-SQL, Cortex Search, Vector Search) before committing to a mapping.
 
-Both paths produce the same output: validated SDC4 artifacts in `.sdc-cache/` and `./output/`.
+Both paths lead to the same place: a model published in SDCStudio, built from cached structure in `.sdc-cache/`.

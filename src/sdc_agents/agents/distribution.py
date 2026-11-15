@@ -1,4 +1,4 @@
-"""Distribution Agent factory — route artifact packages to customer destinations."""
+"""Distribution Agent factory — load reference RDF into a dev triplestore."""
 
 from __future__ import annotations
 
@@ -12,10 +12,13 @@ def create_distribution_agent(
     config: SDCAgentsConfig,
     model: str = "gemini-2.0-flash",
 ) -> LlmAgent:
-    """Create a Distribution Agent for SDC4 artifact package delivery.
+    """Create a Distribution Agent.
 
-    The agent routes validated artifact packages to configured destinations
-    including triplestores, graph databases, REST APIs, and filesystem paths.
+    The agent bootstraps a configured Fuseki or GraphDB triplestore with the
+    SDC4 ontologies and a model's schema RDF, and checks that configured
+    destinations answer. Its package tools (inspect_package,
+    distribute_package, distribute_batch) are deprecated: nothing produces
+    .pkg.zip packages since the validation service was retired.
 
     Args:
         config: SDC Agents configuration.
@@ -28,29 +31,33 @@ def create_distribution_agent(
         name="distribution_agent",
         model=model,
         description=(
-            "Distributes SDC4 artifact packages to customer destinations. "
-            "Routes XML, JSON, RDF, GQL, and JSON-LD artifacts to "
-            "triplestores, graph databases, REST APIs, and filesystem paths."
+            "Bootstraps a development triplestore (Fuseki or GraphDB) with "
+            "SDC4 ontologies and model schema RDF, and checks connectivity "
+            "of configured destinations."
         ),
         instruction=(
-            "You are the Distribution Agent. Your job is to deliver SDC4 "
-            "artifact packages (.pkg.zip) to configured destinations.\n\n"
+            "You are the Distribution Agent. Your job is to load the SDC4 "
+            "reference ontologies and a model's schema RDF into a configured "
+            "triplestore, typically a development one used while building "
+            "and testing a model.\n\n"
             "You can:\n"
-            "- Inspect artifact packages to see their contents and manifest\n"
             "- List configured destinations and check their connectivity\n"
-            "- Distribute individual packages to all configured destinations\n"
-            "- Batch distribute all packages in the output directory\n"
-            "- Bootstrap triplestores with SDC4 ontologies and schema RDF\n\n"
+            "- Bootstrap a triplestore with SDC4 ontologies and schema RDF\n\n"
+            "Deprecated, removal planned for 4.7.0: inspect_package, "
+            "distribute_package and distribute_batch. They read .pkg.zip "
+            "artifact packages, which nothing produces any more. Do not "
+            "suggest them; use them only if the user already has such a "
+            "package and asks for it.\n\n"
             "You CANNOT:\n"
             "- Access datasources (SQL, CSV, etc.)\n"
             "- Generate or validate XML instances\n"
             "- Access files outside the configured output directory\n"
             "- Modify schemas, mappings, or catalog entries\n"
             "- Create or modify destination configurations\n\n"
-            "Packages contain a manifest.json that maps each artifact to a "
-            "named destination. If a destination is not configured, the "
-            "artifact is skipped (not an error). Always inspect a package "
-            "before distributing if you're unsure of its contents."
+            "SDC Agents are design-time tools. Operational data reaches "
+            "Governed Data Records through the application stack or Supabase "
+            "kit that SDCStudio generates from a published model, not through "
+            "this agent."
         ),
         tools=[DistributionToolset(config=config)],
     )

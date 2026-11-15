@@ -2,7 +2,7 @@
 
 ## Overview
 
-SDC Agents is a suite of runtime Python agents that interact with customer datasources, file systems, and remote APIs. Security is foundational to the project's architecture — every design decision prioritizes least-privilege access, agent isolation, and auditability.
+SDC Agents is a suite of design-time Python agents that read customer datasources and help build SDC4 models in SDCStudio; to do that they touch customer datasources, file systems, and remote APIs. They are not an operational ingest path for live data. Security is foundational to the project's architecture — every design decision prioritizes least-privilege access, agent isolation, and auditability.
 
 ---
 
@@ -10,10 +10,10 @@ SDC Agents is a suite of runtime Python agents that interact with customer datas
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 4.5.x   | :white_check_mark: |
-| < 4.5   | :x:                |
+| 4.6.x   | :white_check_mark: |
+| < 4.6   | :x:                |
 
-Only the current minor line (4.5.x) of the major version aligned with SDC Generation 4 receives security updates.
+Only the current minor line (4.6.x) of the major version aligned with SDC Generation 4 receives security updates.
 
 ### Security-Critical Version Floors
 
@@ -31,27 +31,30 @@ Security-conscious and sovereign deployments should pin **`sdc-agents>=4.4.0`**.
 
 ### Agent Isolation
 
-SDC Agents enforces strict isolation between its six agents. Each agent is an ADK `LlmAgent` with a narrowly scoped `BaseToolset`:
+SDC Agents enforces strict isolation between its nine agents. Each agent is an ADK `LlmAgent` with a narrowly scoped `BaseToolset`:
 
 | Agent | Network Access | Datasource Access | File Writes |
 |---|---|---|---|
-| Catalog | HTTPS to SDCStudio (no auth) | None | `.sdc-cache/schemas/`, `.sdc-cache/ontologies/` |
-| Introspect | None | Read-only (from config) | `.sdc-cache/introspections/` |
+| Catalog | HTTPS to SDCStudio catalog (optional token; token for wallet) | None | `.sdc-cache/schemas/` |
+| Introspect | None | Read-only (from config) | `.sdc-cache/introspections/` (structure only) |
 | Mapping | None | None | `.sdc-cache/mappings/` |
-| Generator | None | Read-only (from config) | Output directory |
-| Validation | HTTPS to SDCStudio VaaS (token auth) | None | Output directory |
-| Distribution | Customer-local endpoints only | None | Configured destinations |
+| Generator | None | Read-only CSV/JSON files (from config) | Output directory |
+| Validation | HTTPS to SDCStudio: public catalog (schemas); settlement (token auth) | None | Output directory, `.sdc-cache/schemas/` |
+| Distribution | Configured destinations only (dev triplestore) | None | None locally; writes to configured destinations (filesystem destinations only via the deprecated package tools) |
+| Knowledge | None | Read-only (configured knowledge files) | `.sdc-cache/knowledge/` (vector store) |
+| Assembly | HTTPS to SDCStudio Assembly API and catalog (token auth) | None | None |
+| Semantic Discovery (ADK-only) | GCP Vertex AI Search | None | None |
 
-**Critical invariant**: No agent has both datasource access and network access. The Introspect Agent reads customer data but cannot make network calls. The Validation Agent makes API calls but cannot read customer datasources.
+**Critical invariant**: No agent has both datasource access and network access. The Introspect Agent reads customer data but cannot make network calls. The Validation and Assembly Agents make API calls but cannot read customer datasources.
 
 ### Credential Scoping
 
 | Credential | Available To | Not Available To |
 |---|---|---|
-| Datasource connection strings | Introspect Agent, Generator Agent | Catalog, Mapping, Validation, Distribution |
-| VaaS API token | Validation Agent | All others |
+| Datasource connection strings | Introspect Agent, Generator Agent | Catalog, Mapping, Validation, Distribution, Knowledge, Assembly |
+| SDCStudio API token | Catalog Agent (optional), Validation Agent (settlement), Assembly Agent | Introspect, Mapping, Generator, Distribution, Knowledge |
 | Triplestore/Graph DB credentials | Distribution Agent | All others |
-| SDCStudio base URL | Catalog Agent, Validation Agent | Introspect, Mapping, Generator, Distribution |
+| SDCStudio base URL | Catalog, Validation, Assembly Agents | Introspect, Mapping, Generator, Distribution, Knowledge |
 
 The Mapping Agent has **no credentials at all** — it works entirely on cached files.
 
@@ -70,9 +73,9 @@ Every tool invocation writes a structured JSON record to an append-only audit lo
 
 ## Data Residency
 
-Four agents (Catalog, Introspect, Mapping, Generator) operate entirely on the customer's infrastructure with no outbound network calls (except Catalog Agent fetching public schema metadata).
+Introspect, Mapping, Generator and Knowledge operate entirely on the customer's infrastructure with no outbound calls to SDCStudio. Catalog fetches published schema metadata.
 
-The **Validation Agent** transmits XML instance documents to SDCStudio's VaaS API over HTTPS. See the [SDC Agents PRD](docs/dev/SDC_AGENTS_PRD.md#data-residency-and-vaas-transit) for the full data handling model, including what SDCStudio retains (hashes only) and what it discards (XML content).
+The **Validation Agent** validates locally; it fetches only the published schema. `settle_instance` sends the one record being settled to SDCStudio's Verifiable Settlement Layer over HTTPS. The **Assembly Agent** sends SDCStudio the assembly tree (labels, types and component references derived from the datasource's structure), not row values.
 
 ---
 
@@ -161,9 +164,9 @@ Contributors are expected to add security tests for any new tools or agent capab
 
 ### SDC4 Ecosystem
 
-- [SDCStudio](https://github.com/Axius-SDC/SDCStudio) — Catalog and VaaS API provider
+- [SDCStudio](https://github.com/Axius-SDC/SDCStudio) — Catalog, Assembly and settlement API provider
 - [SDCRM](https://github.com/SemanticDataCharter/SDCRM) — SDC4 Reference Model
 
 ---
 
-*Last Updated: 2026-02-23*
+*Last Updated: 2026-11-15*

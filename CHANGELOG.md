@@ -14,6 +14,47 @@ aligned with SDC Generation 4.
 
 ---
 
+## [4.6.0] - 2026-11-15
+
+A minor release because three tools are deprecated and the documented purpose of the
+suite changed. Nothing is removed and no behaviour changes, apart from the deprecation
+warnings. Upgrading from 4.5.2 needs no changes.
+
+### Changed
+- **The documentation describes SDC Agents as design-time tools, which is what they are.**
+  They read a customer's data sources and help build model components and models in SDCStudio:
+  introspection, knowledge and semantic discovery, mapping suggestions, and assembly through the
+  Assembly API, which publishes the model. The README, user guide, workflows, tool reference,
+  MCP guide, ADK integration page, configuration reference and PRD title had presented a runtime
+  pipeline ending in delivery to customer destinations, and readers took them that way. The
+  Generator and Validation agents are now described as producing sample records for testing a
+  model, with their limits stated: the generator reads CSV or JSON files only and re-reads the
+  whole file for each row. A "Not for operational ingest" note points to the app stacks and
+  Supabase kits SDCStudio generates from a published model, which is where live data becomes
+  Governed Data Records. No behaviour changed.
+- The example configuration and README keep one destination, a development Fuseki triplestore
+  for `bootstrap_triplestore`; the Neo4j, REST and filesystem examples are gone.
+- `SECURITY.md` lists all nine agents in the isolation and credential tables, and no longer
+  describes the retired validation service (VaaS).
+- The tool reference and MCP guide list the current tools: `catalog_download_schema_xsd`,
+  `catalog_check_wallet`, `introspect_sql_schema` and `settle_instance` were missing, and the
+  retired `sign_instance` and the `sign`/`package` parameters are gone.
+- The triplestore workflow says plainly that `catalog_download_ontologies` and
+  `catalog_download_schema_rdf` return content without writing it to the cache, so you save it
+  under `.sdc-cache/` before `bootstrap_triplestore` can load it. Until now it claimed the files
+  were saved for you.
+
+### Deprecated
+- **`inspect_package`, `distribute_package` and `distribute_batch`** (Distribution Agent).
+  Removal is planned for 4.7.0. They route `.pkg.zip` artifact packages, which only the
+  validation service (VaaS) built. SDCStudio retired that service and 4.5.0 removed the code
+  that called it, so nothing produces these packages any more. The tools still work on a package
+  you already have. Each call raises a `DeprecationWarning` and adds a `deprecated` notice to
+  its result; `distribute_batch` warns once per batch. The Distribution Agent's instruction no
+  longer offers them. `bootstrap_triplestore` and `list_destinations` are unchanged and
+  not deprecated. The toolset still registers five tools, so the isolation table and tool
+  counts are unchanged until removal.
+
 ## [4.5.2] - 2026-11-15
 
 ### Security

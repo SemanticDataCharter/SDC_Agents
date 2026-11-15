@@ -1,4 +1,8 @@
-# SDC Agents: Purpose-Scoped ADK Agents for SDC4 Data Operations
+# SDC Agents: Purpose-Scoped ADK Agents for Building SDC4 Models
+
+> **Scope, as of November 2026.** SDC Agents are **design-time** tools: they read a customer's data sources and help build model components and models in SDCStudio (introspection, knowledge and semantic discovery, mapping suggestions, and assembly through the Assembly API, which publishes the model). The Generator and Validation agents produce **sample records for testing a model**; the generator reads CSV or JSON files only and re-reads the whole file for each row. They are **not** the operational path for a customer's live data: in production, data reaches Governed Data Records through ETL into the Django app stack or Supabase kit that SDCStudio generates from a published model (SDCStudio `docs/user-guides/app-generation.md`).
+>
+> Parts of this document were written when the agents were planned as a runtime pipeline and still describe it: the validation service (VaaS, retired in 4.5.0; validation is now local and settlement goes through the Verifiable Settlement Layer), artifact packages (`.pkg.zip`), and their distribution to customer destinations. The package tools of the Distribution Agent are deprecated, with removal planned for 4.7.0; `bootstrap_triplestore` and `list_destinations` remain. Where this document and the code disagree, the code and the [README](../../README.md) are current.
 
 **Date**: 2026-02-23
 **Status**: Active (Phase 5.5 complete)
@@ -12,7 +16,7 @@
 
 ### Problem
 
-Organizations with existing datastores (SQL databases, JSON files, CSV exports) need to produce SDC4-compliant XML instances from their data. Today this requires manual schema study, hand-written mapping code, and bespoke validation scripts — a barrier to SDC4 adoption.
+Organizations with existing datastores (SQL databases, JSON files, CSV exports) need SDC4 data models that describe their data before any of it can become Governed Data Records. Building those models by hand requires studying the source structure, finding reusable published components, and composing them in SDCStudio — a barrier to SDC4 adoption.
 
 A single monolithic agent with broad access to datasources, file systems, and remote APIs creates an unacceptable trust surface. Customers handling sensitive data (healthcare, finance, government) need to know exactly what each agent can do, what it cannot do, and have a complete audit trail of every action.
 
@@ -25,11 +29,11 @@ A single monolithic agent with broad access to datasources, file systems, and re
 | **Catalog Agent** | Schema discovery + artifacts | SDCStudio Catalog API (read-only, no auth) | Datasources, file system, VaaS API |
 | **Introspect Agent** | Datasource structure extraction | Customer datasources (read-only): SQL (30+ via MCP Toolbox), MongoDB, CSV, JSON | SDCStudio APIs, file system writes |
 | **Mapping Agent** | Column-to-component mapping | Cached schemas + introspection results | Datasources directly, SDCStudio APIs |
-| **Generator Agent** | XML instance generation | Mapping configs, datasource (read-only) | SDCStudio APIs, schema downloads |
-| **Validation Agent** | Instance validation and signing | VaaS API (token auth), local XML files | Datasources, schema management |
-| **Distribution Agent** | Artifact package routing | Unpacked artifact files, configured destinations | SDCStudio APIs, datasources |
+| **Generator Agent** | Sample XML records for testing a model (CSV or JSON files) | Mapping configs, datasource (read-only) | SDCStudio APIs, schema downloads |
+| **Validation Agent** | Local validation of sample records; settlement on the Verifiable Settlement Layer | Public catalog (schemas), settlement endpoint (token auth), local XML files | Datasources, schema management |
+| **Distribution Agent** | Triplestore bootstrap (package routing deprecated) | Cached ontologies and schema RDF, configured destinations | SDCStudio APIs, datasources |
 | **Knowledge Agent** | Customer context ingestion | Customer-provided files (read-only) | SDCStudio APIs, datasources, network |
-| **Component Assembly Agent** | Autonomous model assembly | Catalog API, Assembly API (token auth), cached knowledge | Datasources directly, VaaS API |
+| **Component Assembly Agent** | Autonomous model assembly; the Assembly API publishes the model | Catalog API, Assembly API (token auth), cached knowledge | Datasources directly, VaaS API |
 
 Each agent is an ADK `LlmAgent` with its own `BaseToolset` implementation. Tools are Python functions wrapped in `FunctionTool` — ADK derives input/output schemas from type hints and docstrings. An orchestrating agent, customer pipeline, or human operator composes them via `ToolContext.actions.transfer_to_agent` for sequential handoff — but no single agent can reach across boundaries. A compromised or misbehaving agent has blast radius limited to its scope.
 
