@@ -10,10 +10,10 @@ SDC Agents is a suite of design-time Python agents that read customer datasource
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 4.5.x   | :white_check_mark: |
-| < 4.5   | :x:                |
+| 4.6.x   | :white_check_mark: |
+| < 4.6   | :x:                |
 
-Only the current minor line (4.5.x) of the major version aligned with SDC Generation 4 receives security updates.
+Only the current minor line (4.6.x) of the major version aligned with SDC Generation 4 receives security updates.
 
 ### Security-Critical Version Floors
 
@@ -169,4 +169,4 @@ Contributors are expected to add security tests for any new tools or agent capab
 
 ---
 
-*Last Updated: 2026-02-23*
+*Last Updated: 2026-11-15*

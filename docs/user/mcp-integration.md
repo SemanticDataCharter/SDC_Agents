@@ -193,7 +193,7 @@ When you connect an MCP server, the client sees only that agent's tools:
 | `sdc-mapping` | `mapping_suggest`, `mapping_confirm`, `mapping_list` |
 | `sdc-generator` | `generate_instance`, `generate_batch`, `generate_preview` |
 | `sdc-validation` | `validate_instance`, `settle_instance`, `validate_batch` |
-| `sdc-distribution` | `bootstrap_triplestore`, `list_destinations`; deprecated (removal planned for 4.6.0): `inspect_package`, `distribute_package`, `distribute_batch` |
+| `sdc-distribution` | `bootstrap_triplestore`, `list_destinations`; deprecated (removal planned for 4.7.0): `inspect_package`, `distribute_package`, `distribute_batch` |
 | `sdc-knowledge` | `ingest_knowledge_source`, `query_knowledge`, `list_indexed_sources` |
 | `sdc-assembly` | `discover_components`, `propose_cluster_hierarchy`, `select_contextual_components`, `assemble_model` |
 | *(Semantic Discovery)* | `vertex_ai_search` — **ADK-only**, not available via MCP |

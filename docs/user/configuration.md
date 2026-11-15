@@ -229,7 +229,7 @@ A named dictionary. Each entry defines a datasource the Introspect Agent can rea
 
 ### `destinations`
 
-A named dictionary of targets for the Distribution Agent. `bootstrap_triplestore` uses the first `fuseki` or `graphdb` entry, typically a development triplestore; `list_destinations` checks every entry. The `neo4j`, `rest_api` and `filesystem` types, and `graph_uri_from`, matter only to the deprecated package tools (`distribute_package`, `distribute_batch`), which are planned for removal in 4.6.0.
+A named dictionary of targets for the Distribution Agent. `bootstrap_triplestore` uses the first `fuseki` or `graphdb` entry, typically a development triplestore; `list_destinations` checks every entry. The `neo4j`, `rest_api` and `filesystem` types, and `graph_uri_from`, matter only to the deprecated package tools (`distribute_package`, `distribute_batch`), which are planned for removal in 4.7.0.
 
 **Common fields:**
 

@@ -5,7 +5,7 @@ schema RDF into a Fuseki or GraphDB destination, and ``list_destinations``
 checks that configured destinations answer. All connectors use httpx — no
 driver-specific dependencies.
 
-Deprecated; removal planned for 4.6.0: ``inspect_package``,
+Deprecated; removal planned for 4.7.0: ``inspect_package``,
 ``distribute_package`` and ``distribute_batch``. They route artifact packages
 (``.pkg.zip``) that the validation service (VaaS) used to build; SDCStudio
 retired that service and 4.5.0 removed the code that called it, so nothing
@@ -31,11 +31,11 @@ from sdc_agents.common.audit import AuditLogger
 from sdc_agents.common.cache import CacheManager
 from sdc_agents.common.config import SDCAgentsConfig
 
-#: Tools kept for one minor version with a warning. Removal planned for 4.6.0.
+#: Tools kept for one minor version with a warning. Removal planned for 4.7.0.
 DEPRECATED_TOOLS = frozenset({"inspect_package", "distribute_package", "distribute_batch"})
 
 _DEPRECATION_NOTICE = (
-    "{tool} is deprecated and will be removed in sdc-agents 4.6.0. "
+    "{tool} is deprecated and will be removed in sdc-agents 4.7.0. "
     "It reads .pkg.zip artifact packages, which nothing produces since the "
     "validation service (VaaS) was retired. bootstrap_triplestore and "
     "list_destinations are unaffected."
@@ -239,7 +239,7 @@ class DistributionToolset(BaseToolset):
     async def inspect_package(self, package_path: str) -> dict:
         """Deprecated: inspect a .pkg.zip artifact package without distributing it.
 
-        Deprecated; removal planned for 4.6.0: nothing produces
+        Deprecated; removal planned for 4.7.0: nothing produces
         .pkg.zip packages since the validation service was retired.
 
         Args:
@@ -352,7 +352,7 @@ class DistributionToolset(BaseToolset):
     async def distribute_package(self, package_path: str) -> dict:
         """Deprecated: distribute the artifacts of a .pkg.zip to their destinations.
 
-        Deprecated; removal planned for 4.6.0: nothing produces
+        Deprecated; removal planned for 4.7.0: nothing produces
         .pkg.zip packages since the validation service was retired.
 
         Args:
@@ -468,7 +468,7 @@ class DistributionToolset(BaseToolset):
     async def distribute_batch(self, package_dir: Optional[str] = None) -> dict:
         """Deprecated: distribute every .pkg.zip package in a directory.
 
-        Deprecated; removal planned for 4.6.0: nothing produces
+        Deprecated; removal planned for 4.7.0: nothing produces
         .pkg.zip packages since the validation service was retired.
 
         Args:

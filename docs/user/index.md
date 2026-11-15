@@ -68,7 +68,7 @@ The Generator reads **CSV or JSON files only** (or a record passed in directly) 
 
 ## Development Triplestore
 
-The Distribution Agent's `bootstrap_triplestore` loads the SDC4 ontologies and a model's schema RDF into a Fuseki or GraphDB instance you configure, for exploring a model's semantics while you build it. Its package tools (`inspect_package`, `distribute_package`, `distribute_batch`) are **deprecated**, with removal planned for 4.6.0: they read `.pkg.zip` packages that nothing produces since the validation service (VaaS) was retired.
+The Distribution Agent's `bootstrap_triplestore` loads the SDC4 ontologies and a model's schema RDF into a Fuseki or GraphDB instance you configure, for exploring a model's semantics while you build it. Its package tools (`inspect_package`, `distribute_package`, `distribute_batch`) are **deprecated**, with removal planned for 4.7.0: they read `.pkg.zip` packages that nothing produces since the validation service (VaaS) was retired.
 
 Each agent communicates through **files on disk** (the `.sdc-cache/` directory and `./output/`), not direct calls. Every handoff is an inspectable, version-controllable artifact.
 

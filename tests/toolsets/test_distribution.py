@@ -421,7 +421,7 @@ async def test_distribution_exposes_exactly_5_tools(dist_config):
     }
 
 
-# --- Deprecation of the package tools (removal planned for 4.6.0) ---
+# --- Deprecation of the package tools (removal planned for 4.7.0) ---
 
 
 @pytest.mark.parametrize("tool", ["inspect_package", "distribute_package"])
@@ -432,7 +432,7 @@ async def test_package_tools_warn_and_report_deprecation(dist_config, sample_pac
     client = httpx.AsyncClient(transport=_mock_transport())
     toolset = DistributionToolset(config=dist_config, http_client=client)
 
-    with pytest.warns(DeprecationWarning, match=f"{tool} is deprecated.*4\\.6\\.0"):
+    with pytest.warns(DeprecationWarning, match=f"{tool} is deprecated.*4\\.7\\.0"):
         result = await getattr(toolset, tool)(str(sample_package))
     assert result["deprecated"].startswith(f"{tool} is deprecated")
     assert "bootstrap_triplestore" in result["deprecated"]
