@@ -366,7 +366,7 @@ happened with 4.4.1 before this note existed.
 
 **ValidationToolset** (3 tools): `validate_instance`, `settle_instance`, `validate_batch` — local validation with sdcvalidator (the instance's `dm-<ct_id>` names the schema, fetched once from the public catalog), recover mode, settlement on the Verifiable Settlement Layer with the receipt written beside the record, path confinement
 
-**DistributionToolset** (5 tools): `bootstrap_triplestore` (load SDC4 ontologies and schema RDF into Fuseki or GraphDB, idempotent), `list_destinations` (connectivity check); deprecated, removal planned for 4.6.0: `inspect_package`, `distribute_package`, `distribute_batch`, which route `.pkg.zip` packages that nothing produces since the validation service (VaaS) was retired
+**DistributionToolset** (5 tools): `bootstrap_triplestore` (load SDC4 ontologies and schema RDF into Fuseki or GraphDB, idempotent), `list_destinations` (connectivity check); deprecated, removal planned for 4.7.0: `inspect_package`, `distribute_package`, `distribute_batch`, which route `.pkg.zip` packages that nothing produces since the validation service (VaaS) was retired
 
 **KnowledgeToolset** (3 tools): `ingest_knowledge_source`, `query_knowledge`, `list_indexed_sources` — local Chroma vector store
 

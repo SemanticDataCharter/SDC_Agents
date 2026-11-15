@@ -466,7 +466,7 @@ Validate every `*.xml` in a directory (skipping `*.recovered.xml`), locally.
 
 Loads the SDC4 reference ontologies and a model's schema RDF into a development triplestore (Fuseki or GraphDB) with `bootstrap_triplestore`, and checks configured destinations with `list_destinations`.
 
-> **Deprecated, removal planned for 4.6.0:** `inspect_package`, `distribute_package` and `distribute_batch`. They route artifact packages (`.pkg.zip`) that the validation service (VaaS) used to build. SDCStudio retired that service, and 4.5.0 removed the code that called it, so nothing produces these packages any more. The tools still work on a package you already have; each call raises a `DeprecationWarning` and adds a `deprecated` notice to its result.
+> **Deprecated, removal planned for 4.7.0:** `inspect_package`, `distribute_package` and `distribute_batch`. They route artifact packages (`.pkg.zip`) that the validation service (VaaS) used to build. SDCStudio retired that service, and 4.5.0 removed the code that called it, so nothing produces these packages any more. The tools still work on a package you already have; each call raises a `DeprecationWarning` and adds a `deprecated` notice to its result.
 
 ### `inspect_package` (deprecated)
 
@@ -486,7 +486,7 @@ Inspect a `.pkg.zip` artifact package without distributing it.
     {"type": "rdf", "filename": "abc123.ttl", "destination": "triplestore", "size_bytes": 4096}
   ],
   "manifest": {"..."},
-  "deprecated": "inspect_package is deprecated and will be removed in sdc-agents 4.6.0. ..."
+  "deprecated": "inspect_package is deprecated and will be removed in sdc-agents 4.7.0. ..."
 }
 ```
 
@@ -523,7 +523,7 @@ Distribute all artifacts from a `.pkg.zip` to their configured destinations.
   "results": [
     {"artifact": "abc123.ttl", "destination": "triplestore", "status": "delivered"}
   ],
-  "deprecated": "distribute_package is deprecated and will be removed in sdc-agents 4.6.0. ..."
+  "deprecated": "distribute_package is deprecated and will be removed in sdc-agents 4.7.0. ..."
 }
 ```
 
@@ -544,7 +544,7 @@ Distribute all `.pkg.zip` packages in a directory.
     {"package_path": "...", "artifacts_distributed": 3, "errors": []}
   ],
   "failed": 0,
-  "deprecated": "distribute_batch is deprecated and will be removed in sdc-agents 4.6.0. ..."
+  "deprecated": "distribute_batch is deprecated and will be removed in sdc-agents 4.7.0. ..."
 }
 ```
 

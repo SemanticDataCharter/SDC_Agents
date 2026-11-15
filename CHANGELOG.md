@@ -14,7 +14,11 @@ aligned with SDC Generation 4.
 
 ---
 
-## [Unreleased]
+## [4.6.0] - 2026-11-15
+
+A minor release because three tools are deprecated and the documented purpose of the
+suite changed. Nothing is removed and no behaviour changes, apart from the deprecation
+warnings. Upgrading from 4.5.2 needs no changes.
 
 ### Changed
 - **The documentation describes SDC Agents as design-time tools, which is what they are.**
@@ -42,7 +46,7 @@ aligned with SDC Generation 4.
 
 ### Deprecated
 - **`inspect_package`, `distribute_package` and `distribute_batch`** (Distribution Agent).
-  Removal is planned for 4.6.0. They route `.pkg.zip` artifact packages, which only the
+  Removal is planned for 4.7.0. They route `.pkg.zip` artifact packages, which only the
   validation service (VaaS) built. SDCStudio retired that service and 4.5.0 removed the code
   that called it, so nothing produces these packages any more. The tools still work on a package
   you already have. Each call raises a `DeprecationWarning` and adds a `deprecated` notice to

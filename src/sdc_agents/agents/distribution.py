@@ -43,7 +43,7 @@ def create_distribution_agent(
             "You can:\n"
             "- List configured destinations and check their connectivity\n"
             "- Bootstrap a triplestore with SDC4 ontologies and schema RDF\n\n"
-            "Deprecated, removal planned for 4.6.0: inspect_package, "
+            "Deprecated, removal planned for 4.7.0: inspect_package, "
             "distribute_package and distribute_batch. They read .pkg.zip "
             "artifact packages, which nothing produces any more. Do not "
             "suggest them; use them only if the user already has such a "
